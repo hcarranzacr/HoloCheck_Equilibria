@@ -1,0 +1,60 @@
+{
+    "title": "system_logs",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "Primary key, auto-increment"
+        },
+        "log_type": {
+            "type": "string",
+            "enum": [
+                "auth",
+                "data_access",
+                "data_modification",
+                "error",
+                "api_call"
+            ],
+            "description": "Type of log"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID if applicable"
+        },
+        "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Organization ID if applicable"
+        },
+        "action": {
+            "type": "string",
+            "description": "Action performed"
+        },
+        "resource": {
+            "type": "string",
+            "description": "Resource accessed"
+        },
+        "ip_address": {
+            "type": "string",
+            "description": "IP address"
+        },
+        "user_agent": {
+            "type": "string",
+            "description": "User agent string"
+        },
+        "extra_data": {
+            "type": "object",
+            "description": "Additional metadata as JSON"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Log timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "log_type",
+        "action"
+    ]
+}

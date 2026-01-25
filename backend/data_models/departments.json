@@ -1,0 +1,35 @@
+{
+    "title": "departments",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to organizations"
+        },
+        "name": {
+            "type": "string",
+            "description": "Department name"
+        },
+        "leader_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "User ID of department leader"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "organization_id",
+        "name"
+    ]
+}

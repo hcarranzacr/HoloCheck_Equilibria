@@ -1,0 +1,17 @@
+[
+    {
+        "id": 1,
+        "tenant_id": "450e8400-e29b-41d4-a716-446655440001",
+        "ai_enabled": true,
+        "ai_model": "gpt-4o",
+        "visualization_enabled": true,
+        "custom_prompts_enabled": true,
+        "global_prompt_employee": "Eres un experto en salud ocupacional y bienestar organizacional. Analiza los siguientes biomarcadores de un colaborador y genera recomendaciones personalizadas.",
+        "global_prompt_department": "Eres un experto en análisis de salud organizacional. Analiza los datos agregados de un departamento y genera insights accionables.",
+        "global_prompt_organization": "Eres un consultor experto en bienestar organizacional. Analiza los datos de toda la organización y genera un análisis estratégico.",
+        "reminder_frequency": "monthly",
+        "report_frequency": "biweekly",
+        "created_at": "2026-01-19 10:00:00",
+        "updated_at": "2026-01-19 10:00:00"
+    }
+]

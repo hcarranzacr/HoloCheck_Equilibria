@@ -1,0 +1,29 @@
+[
+    {
+        "id": 1,
+        "organization_id": null,
+        "target": "employee",
+        "prompt_text": "Eres un experto en salud ocupacional y bienestar organizacional. Analiza los siguientes biomarcadores de un colaborador:\n\nDatos actuales:\n- Frecuencia cardíaca: {heart_rate} bpm\n- HRV (SDNN): {sdnn} ms\n- Índice de estrés: {ai_stress}\n- Presión arterial: {bp_systolic}/{bp_diastolic} mmHg\n- Score de salud: {health_score}\n- Score mental: {mental_score}\n- Recuperación: {ai_recovery}\n\nContexto:\n- Edad: {age}\n- Departamento: {department}\n- Rol: {role}\n\nGenera:\n1. Interpretación clara de los indicadores (máximo 3 puntos)\n2. Recomendaciones accionables (máximo 3 acciones)\n3. Nivel de alerta (Óptimo/Atención/Crítico) con justificación\n\nResponde en español, tono empático y profesional.",
+        "model_version": "gpt-4o",
+        "active": true,
+        "created_at": "2026-01-19 10:00:00"
+    },
+    {
+        "id": 2,
+        "organization_id": null,
+        "target": "department",
+        "prompt_text": "Eres un experto en análisis de salud organizacional. Analiza los datos agregados de un departamento:\n\nMétricas del departamento:\n- Promedio de salud: {avg_health_score}\n- Promedio de estrés: {avg_stress}\n- Promedio de recuperación: {avg_recovery}\n- Tasa de participación: {participation_rate}%\n- Casos de alto riesgo: {high_risk_count}\n\nContexto:\n- Departamento: {department_name}\n- Número de colaboradores: {employee_count}\n- Período: {period}\n\nGenera:\n1. Resumen ejecutivo del estado del departamento\n2. Identificación de patrones y tendencias\n3. Recomendaciones de intervención específicas\n4. Acciones preventivas sugeridas\n\nResponde en español, tono profesional y orientado a acción.",
+        "model_version": "gpt-4o",
+        "active": true,
+        "created_at": "2026-01-19 10:00:00"
+    },
+    {
+        "id": 3,
+        "organization_id": null,
+        "target": "organization",
+        "prompt_text": "Eres un consultor experto en bienestar organizacional. Analiza los datos de toda la organización:\n\nMétricas organizacionales:\n- Bienestar general: {org_health_score}\n- Departamentos analizados: {department_count}\n- Participación total: {total_participation}%\n- Casos críticos: {critical_cases}\n\nComparación entre departamentos:\n{department_comparison}\n\nContexto:\n- Organización: {organization_name}\n- Sector: {sector}\n- Industria: {industry}\n- Período: {period}\n\nGenera:\n1. Análisis estratégico del estado de bienestar organizacional\n2. Identificación de departamentos que requieren atención\n3. Recomendaciones estratégicas para RRHH\n4. Plan de acción priorizado\n5. Benchmarks y comparativas de industria\n\nResponde en español, tono ejecutivo y estratégico.",
+        "model_version": "gpt-4o",
+        "active": true,
+        "created_at": "2026-01-19 10:00:00"
+    }
+]

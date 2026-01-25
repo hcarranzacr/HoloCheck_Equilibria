@@ -1,0 +1,81 @@
+{
+    "title": "ai_analysis_results",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID from Supabase Auth"
+        },
+        "measurement_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to biometric_measurements"
+        },
+        "department_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Department ID for department-level analysis"
+        },
+        "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Organization ID for org-level analysis"
+        },
+        "analysis_type": {
+            "type": "string",
+            "enum": [
+                "individual",
+                "department",
+                "organization"
+            ],
+            "description": "Type of analysis"
+        },
+        "interpretation": {
+            "type": "string",
+            "description": "AI interpretation text"
+        },
+        "recommendations": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "List of AI recommendations"
+        },
+        "alert_level": {
+            "type": "string",
+            "enum": [
+                "optimal",
+                "attention",
+                "critical"
+            ],
+            "description": "Alert level"
+        },
+        "prompt_tokens": {
+            "type": "integer",
+            "description": "OpenAI prompt tokens used"
+        },
+        "completion_tokens": {
+            "type": "integer",
+            "description": "OpenAI completion tokens used"
+        },
+        "total_tokens": {
+            "type": "integer",
+            "description": "Total OpenAI tokens used"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Analysis timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "user_id",
+        "analysis_type"
+    ]
+}

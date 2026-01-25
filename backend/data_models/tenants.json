@@ -1,0 +1,52 @@
+{
+    "title": "tenants",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "name": {
+            "type": "string",
+            "description": "Tenant name"
+        },
+        "domain": {
+            "type": "string",
+            "description": "Custom domain"
+        },
+        "logo_url": {
+            "type": "string",
+            "description": "Tenant logo URL"
+        },
+        "primary_color": {
+            "type": "string",
+            "description": "Brand primary color"
+        },
+        "secondary_color": {
+            "type": "string",
+            "description": "Brand secondary color"
+        },
+        "locale": {
+            "type": "string",
+            "description": "Default locale"
+        },
+        "timezone": {
+            "type": "string",
+            "description": "Default timezone"
+        },
+        "active": {
+            "type": "boolean",
+            "description": "Tenant active status"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "name"
+    ]
+}

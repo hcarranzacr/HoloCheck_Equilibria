@@ -1,0 +1,48 @@
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Home, ArrowLeft } from 'lucide-react';
+
+export default function NotFound() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+      <Card className="max-w-md w-full shadow-xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+            <span className="text-5xl font-bold text-slate-400">404</span>
+          </div>
+          <CardTitle className="text-2xl">Página No Encontrada</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-6">
+          <p className="text-slate-600 leading-relaxed">
+            Lo sentimos, la página que buscas no existe o ha sido movida.
+          </p>
+          
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button 
+              onClick={() => navigate(-1)}
+              variant="outline"
+              className="gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver Atrás
+            </Button>
+            <Button 
+              onClick={() => navigate('/')}
+              className="bg-sky-500 hover:bg-sky-600 gap-2"
+            >
+              <Home className="w-4 h-4" />
+              Ir al Inicio
+            </Button>
+          </div>
+
+          <p className="text-sm text-slate-500 mt-4">
+            Si crees que esto es un error, por favor contacta al soporte.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -1,0 +1,66 @@
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { authHelpers } from '@/lib/supabase';
+
+export default function AuthCallback() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    handleCallback();
+  }, []);
+
+  const handleCallback = async () => {
+    try {
+      // Get the current session after OAuth callback
+      const session = await authHelpers.getSession();
+      
+      if (!session) {
+        console.error('No session found after callback');
+        navigate('/login');
+        return;
+      }
+
+      // Get user profile to determine role and redirect
+      const user = await authHelpers.getUser();
+      
+      if (!user) {
+        console.error('No user found after callback');
+        navigate('/login');
+        return;
+      }
+
+      const profile = await authHelpers.getUserProfile(user.id);
+      
+      if (!profile) {
+        console.error('No profile found for user');
+        navigate('/login');
+        return;
+      }
+
+      // Redirect based on role
+      const roleRoutes: Record<string, string> = {
+        'admin_global': '/admin',
+        'admin_org': '/org/health-by-dept',
+        'rrhh': '/hr/health-indices',
+        'leader': '/leader/team-status',
+        'employee': '/',
+      };
+
+      const redirectPath = roleRoutes[profile.role] || '/';
+      navigate(redirectPath);
+      
+    } catch (error) {
+      console.error('Auth callback error:', error);
+      navigate('/login');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto mb-4"></div>
+        <p className="text-slate-600">Completando autenticación...</p>
+      </div>
+    </div>
+  );
+}

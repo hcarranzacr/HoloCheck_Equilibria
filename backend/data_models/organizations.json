@@ -1,0 +1,56 @@
+{
+    "title": "organizations",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "name": {
+            "type": "string",
+            "description": "Organization name"
+        },
+        "sector_id": {
+            "type": "integer",
+            "description": "Foreign key to param_sectors"
+        },
+        "industry_id": {
+            "type": "integer",
+            "description": "Foreign key to param_industries"
+        },
+        "subscription_plan_id": {
+            "type": "integer",
+            "description": "Foreign key to param_subscription_plans"
+        },
+        "logo_url": {
+            "type": "string",
+            "description": "URL to organization logo"
+        },
+        "brand_slogan": {
+            "type": "string",
+            "description": "Organization slogan"
+        },
+        "welcome_message": {
+            "type": "string",
+            "description": "Welcome message for users"
+        },
+        "primary_color": {
+            "type": "string",
+            "description": "Brand primary color"
+        },
+        "secondary_color": {
+            "type": "string",
+            "description": "Brand secondary color"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "name"
+    ]
+}

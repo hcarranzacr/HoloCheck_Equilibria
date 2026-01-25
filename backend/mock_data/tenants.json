@@ -1,0 +1,14 @@
+[
+    {
+        "id": "450e8400-e29b-41d4-a716-446655440001",
+        "name": "HoloCheck Platform",
+        "domain": "holocheck.ai",
+        "logo_url": "/holocheck-logo.png",
+        "primary_color": "#0EA5E9",
+        "secondary_color": "#10B981",
+        "locale": "es-CR",
+        "timezone": "America/Costa_Rica",
+        "active": true,
+        "created_at": "2026-01-19 10:00:00"
+    }
+]

@@ -1,0 +1,32 @@
+{
+    "title": "app_settings",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "Primary key, auto-increment"
+        },
+        "setting_key": {
+            "type": "string",
+            "description": "Setting key"
+        },
+        "setting_value": {
+            "type": "string",
+            "description": "Setting value"
+        },
+        "description": {
+            "type": "string",
+            "description": "Setting description"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "setting_key",
+        "setting_value"
+    ]
+}

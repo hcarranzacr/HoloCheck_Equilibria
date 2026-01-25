@@ -1,0 +1,73 @@
+{
+    "title": "user_profiles",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID from Supabase Auth"
+        },
+        "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to organizations"
+        },
+        "department_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to departments"
+        },
+        "full_name": {
+            "type": "string",
+            "description": "User full name"
+        },
+        "email": {
+            "type": "string",
+            "description": "User email"
+        },
+        "role": {
+            "type": "string",
+            "enum": [
+                "admin_global",
+                "admin_org",
+                "rrhh",
+                "leader",
+                "employee"
+            ],
+            "description": "User role"
+        },
+        "date_of_birth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth"
+        },
+        "gender": {
+            "type": "string",
+            "description": "Gender"
+        },
+        "phone": {
+            "type": "string",
+            "description": "Phone number"
+        },
+        "avatar_url": {
+            "type": "string",
+            "description": "Avatar image URL"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "user_id",
+        "organization_id",
+        "email",
+        "role"
+    ]
+}

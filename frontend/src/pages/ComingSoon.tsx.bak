@@ -1,0 +1,72 @@
+import { useLocation } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Construction, ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+
+export default function ComingSoon() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Extract page title from path
+  const pathParts = location.pathname.split('/').filter(Boolean);
+  const pageTitle = pathParts[pathParts.length - 1]
+    ?.split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ') || 'Página';
+
+  return (
+    <div className="container mx-auto py-8">
+      <Card className="max-w-2xl mx-auto shadow-lg">
+        <CardHeader className="text-center">
+          <div className="mx-auto w-20 h-20 bg-sky-100 rounded-full flex items-center justify-center mb-4">
+            <Construction className="w-10 h-10 text-sky-600" />
+          </div>
+          <CardTitle className="text-2xl">Funcionalidad en Desarrollo</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-6">
+          <div className="space-y-3">
+            <p className="text-lg font-medium text-slate-700">
+              {pageTitle}
+            </p>
+            <p className="text-slate-600 leading-relaxed">
+              Estamos trabajando en esta funcionalidad para ofrecerte la mejor experiencia posible.
+              Pronto estará disponible con todas las herramientas que necesitas para cuidar tu bienestar.
+            </p>
+          </div>
+
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 text-sm text-slate-700">
+            <p className="font-semibold mb-2 text-sky-900">¿Qué puedes hacer mientras tanto?</p>
+            <ul className="text-left space-y-1 ml-4">
+              <li>• Explora otras secciones disponibles</li>
+              <li>• Completa tu perfil de bienestar</li>
+              <li>• Revisa tus métricas actuales</li>
+              <li>• Accede a recursos educativos</li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button 
+              onClick={() => navigate(-1)}
+              variant="outline"
+              className="gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </Button>
+            <Button 
+              onClick={() => navigate('/')}
+              className="bg-sky-500 hover:bg-sky-600 gap-2"
+            >
+              Ir al Dashboard
+            </Button>
+          </div>
+
+          <p className="text-sm text-slate-500 mt-6">
+            Si tienes sugerencias sobre esta funcionalidad, contáctanos. Tu feedback es valioso.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

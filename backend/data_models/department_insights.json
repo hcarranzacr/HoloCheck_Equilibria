@@ -1,0 +1,71 @@
+{
+    "title": "department_insights",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID from Supabase Auth"
+        },
+        "department_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to departments"
+        },
+        "period_start": {
+            "type": "string",
+            "format": "date",
+            "description": "Analysis period start date"
+        },
+        "period_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Analysis period end date"
+        },
+        "avg_health_score": {
+            "type": "number",
+            "description": "Average health score"
+        },
+        "avg_stress": {
+            "type": "number",
+            "description": "Average stress level"
+        },
+        "avg_recovery": {
+            "type": "number",
+            "description": "Average recovery score"
+        },
+        "participation_rate": {
+            "type": "number",
+            "description": "Participation rate percentage"
+        },
+        "high_risk_count": {
+            "type": "integer",
+            "description": "Number of high-risk individuals"
+        },
+        "summary": {
+            "type": "string",
+            "description": "AI-generated summary"
+        },
+        "recommendations": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Department-level recommendations"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Insight generation timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "user_id",
+        "department_id"
+    ]
+}

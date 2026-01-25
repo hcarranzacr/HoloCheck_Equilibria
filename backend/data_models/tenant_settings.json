@@ -1,0 +1,65 @@
+{
+    "title": "tenant_settings",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "Primary key, auto-increment"
+        },
+        "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to tenants"
+        },
+        "ai_enabled": {
+            "type": "boolean",
+            "description": "AI analysis enabled"
+        },
+        "ai_model": {
+            "type": "string",
+            "description": "OpenAI model version"
+        },
+        "visualization_enabled": {
+            "type": "boolean",
+            "description": "Advanced visualizations enabled"
+        },
+        "custom_prompts_enabled": {
+            "type": "boolean",
+            "description": "Custom AI prompts enabled"
+        },
+        "global_prompt_employee": {
+            "type": "string",
+            "description": "Global employee analysis prompt"
+        },
+        "global_prompt_department": {
+            "type": "string",
+            "description": "Global department analysis prompt"
+        },
+        "global_prompt_organization": {
+            "type": "string",
+            "description": "Global organization analysis prompt"
+        },
+        "reminder_frequency": {
+            "type": "string",
+            "description": "Reminder frequency setting"
+        },
+        "report_frequency": {
+            "type": "string",
+            "description": "Report generation frequency"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "tenant_id"
+    ]
+}

@@ -1,0 +1,44 @@
+{
+    "title": "subscription_usage_logs",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "Primary key, auto-increment"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID from Supabase Auth"
+        },
+        "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Foreign key to organizations"
+        },
+        "scan_type": {
+            "type": "string",
+            "enum": [
+                "employee_scan",
+                "department_analysis",
+                "organization_analysis"
+            ],
+            "description": "Type of usage"
+        },
+        "department_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Department ID if applicable"
+        },
+        "used_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Usage timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "user_id",
+        "organization_id",
+        "scan_type"
+    ]
+}

@@ -1,0 +1,105 @@
+{
+    "title": "biometric_measurements",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "User ID from Supabase Auth"
+        },
+        "measurement_id": {
+            "type": "string",
+            "description": "DeepAffex measurement ID"
+        },
+        "heart_rate": {
+            "type": "number",
+            "description": "Heart rate in BPM"
+        },
+        "respiration_rate": {
+            "type": "number",
+            "description": "Respiration rate in BPM"
+        },
+        "bp_systolic": {
+            "type": "number",
+            "description": "Systolic blood pressure"
+        },
+        "bp_diastolic": {
+            "type": "number",
+            "description": "Diastolic blood pressure"
+        },
+        "sdnn": {
+            "type": "number",
+            "description": "HRV SDNN in ms"
+        },
+        "rmssd": {
+            "type": "number",
+            "description": "HRV RMSSD in ms"
+        },
+        "ai_stress": {
+            "type": "number",
+            "description": "AI-calculated stress index"
+        },
+        "ai_fatigue": {
+            "type": "number",
+            "description": "AI-calculated fatigue level"
+        },
+        "ai_cognitive_load": {
+            "type": "number",
+            "description": "AI-calculated cognitive load"
+        },
+        "ai_recovery": {
+            "type": "number",
+            "description": "AI-calculated recovery score"
+        },
+        "mental_score": {
+            "type": "number",
+            "description": "Mental health score"
+        },
+        "bio_age_basic": {
+            "type": "number",
+            "description": "Biological age"
+        },
+        "cvd_risk": {
+            "type": "number",
+            "description": "Cardiovascular disease risk"
+        },
+        "health_score": {
+            "type": "number",
+            "description": "Overall health score"
+        },
+        "vital_score": {
+            "type": "number",
+            "description": "Vital signs score"
+        },
+        "physio_score": {
+            "type": "number",
+            "description": "Physiological score"
+        },
+        "risks_score": {
+            "type": "number",
+            "description": "Risk assessment score"
+        },
+        "quality_score": {
+            "type": "number",
+            "description": "Capture quality score"
+        },
+        "raw_data": {
+            "type": "object",
+            "description": "Raw JSON data from DeepAffex with all 40+ biomarcadores"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Measurement timestamp"
+        }
+    },
+    "required": [
+        "id",
+        "user_id",
+        "measurement_id"
+    ]
+}
