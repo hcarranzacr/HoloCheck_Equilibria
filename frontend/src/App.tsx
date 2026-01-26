@@ -64,6 +64,9 @@ import AdminCreditUsage from './pages/admin/credit-usage';
 import AdminPrompts from './pages/admin/prompts';
 import AdminPartnerships from './pages/admin/partnerships';
 
+// User Manual
+import UserManual from './pages/UserManual';
+
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -73,6 +76,7 @@ const App = () => {
   console.log('📋 [App] HR routes: /hr/dashboard, /hr/insights, /hr/measurements');
   console.log('📋 [App] Org routes: /org/dashboard, /org/insights, /org/users');
   console.log('📋 [App] Admin routes: /admin/organizations, /admin/partnerships');
+  console.log('📖 [App] User Manual route: /user-manual');
   
   return (
     <QueryClientProvider client={queryClient}>
@@ -92,6 +96,9 @@ const App = () => {
                 <Route element={<AppLayout />}>
                   {/* Root redirect */}
                   <Route path="/" element={<Navigate to="/employee/dashboard" replace />} />
+                  
+                  {/* User Manual - Available for all roles */}
+                  <Route path="/user-manual" element={<UserManual />} />
                   
                   {/* Employee routes */}
                   <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
