@@ -14,24 +14,18 @@ export function useMediaQuery(query: string): boolean {
     setMatches(media.matches);
 
     // Create listener function
-    const listener = (e: MediaQueryListEvent | MediaQueryList) => {
-      setMatches('matches' in e ? e.matches : (e as MediaQueryList).matches);
+    const listener = (e: MediaQueryListEvent) => {
+      setMatches(e.matches);
     };
     
     // Add listener (Safari iOS compatible)
-    // Safari iOS older versions use addListener instead of addEventListener
     if (media.addEventListener) {
-      media.addEventListener('change', listener as (e: MediaQueryListEvent) => void);
-    } else if (media.addListener) {
-      // Fallback for older Safari versions
-      media.addListener(listener as (e: MediaQueryList) => void);
+      media.addEventListener('change', listener);
     }
 
     return () => {
       if (media.removeEventListener) {
-        media.removeEventListener('change', listener as (e: MediaQueryListEvent) => void);
-      } else if (media.removeListener) {
-        media.removeListener(listener as (e: MediaQueryList) => void);
+        media.removeEventListener('change', listener);
       }
     };
   }, [query]);

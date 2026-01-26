@@ -1,6 +1,5 @@
-import { useMemo } from 'react';
-import { biometricAPI } from '@/lib/supabase-admin';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useState, useEffect, useMemo } from 'react';
+import { apiClient } from '@/lib/api-client';
 import { format } from 'date-fns';
 
 interface BiometricMeasurement {
@@ -36,16 +35,29 @@ export function useBiometricData(
   departmentId?: string,
   dateRange?: { start: Date; end: Date }
 ) {
-  const { data: measurements, loading, refetch } = useSupabaseQuery<BiometricMeasurement[]>(
-    async () => {
+  const [measurements, setMeasurements] = useState<BiometricMeasurement[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMeasurements();
+  }, [userId, departmentId]);
+
+  async function loadMeasurements() {
+    try {
+      setLoading(true);
       if (userId) {
-        return await biometricAPI.getByUserId(userId);
+        const data = await apiClient.getMeasurementHistory(userId, 100);
+        setMeasurements(data as BiometricMeasurement[]);
+      } else {
+        setMeasurements([]);
       }
-      // TODO: Implementar carga por departamento
-      return [];
-    },
-    [userId, departmentId]
-  );
+    } catch (error) {
+      console.error('Error loading measurements:', error);
+      setMeasurements([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const aggregated = useMemo<AggregatedBiometrics>(() => {
     if (!measurements || measurements.length === 0) {
@@ -134,7 +146,7 @@ export function useBiometricData(
     aggregated,
     trends,
     loading,
-    refetch,
+    refetch: loadMeasurements,
     getChartData
   };
 }

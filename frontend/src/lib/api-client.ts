@@ -90,6 +90,20 @@ export interface Recommendation {
 class ApiClient {
   private client = client;
 
+  // Auth namespace for compatibility
+  auth = {
+    me: async () => {
+      const user = await this.client.auth.me();
+      return user.data;
+    },
+    toLogin: async () => {
+      await this.client.auth.toLogin();
+    },
+    logout: async () => {
+      await this.client.auth.logout();
+    }
+  };
+
   // Auth methods
   async getCurrentUser() {
     const user = await this.client.auth.me();
@@ -102,6 +116,182 @@ class ApiClient {
 
   async logout() {
     await this.client.auth.logout();
+  }
+
+  // User Profiles namespace for compatibility
+  userProfiles = {
+    query: async (params: any) => {
+      const response = await this.client.entities.user_profiles.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    get: async (params: any) => {
+      const response = await this.client.entities.user_profiles.get(params);
+      return response.data;
+    },
+    list: async (organizationId?: string) => {
+      const query = organizationId ? { organization_id: organizationId } : {};
+      const response = await this.client.entities.user_profiles.query({ query });
+      return { data: response.data, items: response.data.items };
+    },
+    listAll: async () => {
+      const response = await this.client.entities.user_profiles.queryAll({});
+      return { data: response.data, items: response.data.items };
+    },
+    create: async (data: any) => {
+      const response = await this.client.entities.user_profiles.create({ data });
+      return response.data;
+    },
+    update: async (id: string, data: any) => {
+      const response = await this.client.entities.user_profiles.update({ id, data });
+      return response.data;
+    },
+    delete: async (params: any) => {
+      return await this.client.entities.user_profiles.delete(params);
+    }
+  };
+
+  // Organizations namespace
+  organizations = {
+    query: async (params: any) => {
+      const response = await this.client.entities.organizations.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    queryAll: async (params: any) => {
+      const response = await this.client.entities.organizations.queryAll(params);
+      return { data: response.data, items: response.data.items };
+    },
+    list: async () => {
+      const response = await this.client.entities.organizations.queryAll({});
+      return { data: response.data, items: response.data.items };
+    },
+    get: async (id: string) => {
+      const response = await this.client.entities.organizations.get({ id });
+      return response.data;
+    }
+  };
+
+  // Departments namespace
+  departments = {
+    query: async (params: any) => {
+      const response = await this.client.entities.departments.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    queryAll: async (params: any) => {
+      const response = await this.client.entities.departments.queryAll(params);
+      return { data: response.data, items: response.data.items };
+    },
+    list: async () => {
+      const response = await this.client.entities.departments.queryAll({});
+      return { data: response.data, items: response.data.items };
+    },
+    listAll: async () => {
+      const response = await this.client.entities.departments.queryAll({});
+      return { data: response.data, items: response.data.items };
+    },
+    get: async (id: string) => {
+      const response = await this.client.entities.departments.get({ id });
+      return response.data;
+    },
+    create: async (params: any) => {
+      const response = await this.client.entities.departments.create(params);
+      return response.data;
+    },
+    update: async (params: any) => {
+      const response = await this.client.entities.departments.update(params);
+      return response.data;
+    },
+    delete: async (params: any) => {
+      return await this.client.entities.departments.delete(params);
+    }
+  };
+
+  // Measurements namespace
+  measurements = {
+    query: async (params: any) => {
+      const response = await this.client.entities.biometric_measurements.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    queryAll: async (params: any) => {
+      const response = await this.client.entities.biometric_measurements.queryAll(params);
+      return { data: response.data, items: response.data.items };
+    },
+    create: async (data: any) => {
+      const response = await this.client.entities.biometric_measurements.create({ data });
+      return response.data;
+    }
+  };
+
+  // Dashboards namespace
+  dashboards = {
+    getStats: async (params: any) => {
+      return await this.client.apiCall.invoke({
+        url: '/api/v1/dashboards/stats',
+        method: 'GET',
+        data: params
+      });
+    },
+    hr: async (params: any) => {
+      return await this.client.apiCall.invoke({
+        url: '/api/v1/dashboards/hr',
+        method: 'GET',
+        data: params
+      });
+    },
+    leader: async (params: any) => {
+      return await this.client.apiCall.invoke({
+        url: '/api/v1/dashboards/leader',
+        method: 'GET',
+        data: params
+      });
+    }
+  };
+
+  // AI Analyses namespace
+  aiAnalyses = {
+    query: async (params: any) => {
+      const response = await this.client.entities.ai_analyses.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    queryAll: async (params: any) => {
+      const response = await this.client.entities.ai_analyses.queryAll(params);
+      return { data: response.data, items: response.data.items };
+    }
+  };
+
+  // Prompts namespace
+  prompts = {
+    query: async (params: any) => {
+      const response = await this.client.entities.prompts.query(params);
+      return { data: response.data, items: response.data.items };
+    },
+    queryAll: async (params: any) => {
+      const response = await this.client.entities.prompts.queryAll(params);
+      return { data: response.data, items: response.data.items };
+    },
+    create: async (params: any) => {
+      const response = await this.client.entities.prompts.create(params);
+      return response.data;
+    },
+    update: async (params: any) => {
+      const response = await this.client.entities.prompts.update(params);
+      return response.data;
+    },
+    delete: async (params: any) => {
+      return await this.client.entities.prompts.delete(params);
+    }
+  };
+
+  // Audit log method - updated signature to match usage
+  async logAudit(userId: string, action: string, entityType: string, details: any) {
+    try {
+      await this.client.apiCall.invoke({
+        url: '/api/v1/audit-logs',
+        method: 'POST',
+        data: { user_id: userId, action, entity_type: entityType, details }
+      });
+    } catch (error) {
+      console.error('Error logging audit:', error);
+    }
   }
 
   // Biometric measurements
@@ -274,3 +464,4 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+export const api = apiClient; // Alias for compatibility

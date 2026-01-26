@@ -1,7 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { departmentsAPI } from '@/lib/supabase-admin';
-import { useSupabaseQuery } from '@/hooks/useSupabaseQuery';
+import { apiClient } from '@/lib/api-client';
 import { Loader2 } from 'lucide-react';
 
 interface DepartmentSelectorProps {
@@ -19,10 +18,25 @@ export function DepartmentSelector({
   onChange,
   placeholder = 'Seleccionar departamento'
 }: DepartmentSelectorProps) {
-  const { data: departments, loading } = useSupabaseQuery(
-    () => departmentsAPI.getAll(organizationId),
-    [organizationId]
-  );
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDepartments();
+  }, [organizationId]);
+
+  async function loadDepartments() {
+    try {
+      setLoading(true);
+      const response = await apiClient.departments.list();
+      setDepartments(response.data.items || []);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+      setDepartments([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   if (loading) {
     return (

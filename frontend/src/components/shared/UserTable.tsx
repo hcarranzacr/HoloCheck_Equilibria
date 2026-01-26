@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Edit, Trash2, Search, Loader2 } from 'lucide-react';
-import { userProfilesAPI } from '@/lib/supabase-admin';
-import { useSupabaseQuery } from '@/hooks/useSupabaseQuery';
+import { apiClient } from '@/lib/api-client';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 
 interface UserTableProps {
@@ -26,20 +25,31 @@ export function UserTable({
   allowDelete = true
 }: UserTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const { logActivity } = useActivityLogger();
 
-  const { data: users, loading } = useSupabaseQuery(
-    () => userProfilesAPI.getAll(organizationId),
-    [organizationId],
-    {
-      onSuccess: (data) => {
-        logActivity('users_loaded', { 
-          count: data?.length || 0,
-          organization_id: organizationId 
-        });
-      }
+  useEffect(() => {
+    loadUsers();
+  }, [organizationId]);
+
+  async function loadUsers() {
+    try {
+      setLoading(true);
+      const response = await apiClient.userProfiles.list(organizationId);
+      const userData = response.data.items || [];
+      setUsers(userData);
+      logActivity('users_loaded', { 
+        count: userData.length,
+        organization_id: organizationId 
+      });
+    } catch (error) {
+      console.error('Error loading users:', error);
+      setUsers([]);
+    } finally {
+      setLoading(false);
     }
-  );
+  }
 
   const filteredUsers = (users || []).filter(user => {
     const matchesSearch = 
@@ -99,7 +109,7 @@ export function UserTable({
           <TableBody>
             {filteredUsers.map((user) => (
               <TableRow 
-                key={user.user_id}
+                key={user.user_id || user.id}
                 onClick={() => onUserSelect?.(user)}
                 className={onUserSelect ? 'cursor-pointer hover:bg-slate-50' : ''}
               >
