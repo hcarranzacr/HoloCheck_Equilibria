@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -21,14 +21,12 @@ import {
 
 interface User {
   id: string;
+  user_id: string;
   email: string;
-  user_profiles: {
-    full_name: string;
-    role: string;
-    departments: {
-      name: string;
-    };
-  }[];
+  full_name: string;
+  role: string;
+  department_id: string;
+  department_name?: string;
 }
 
 export default function HRUsers() {
@@ -46,37 +44,38 @@ export default function HRUsers() {
     try {
       setLoading(true);
       
-      // Get current user's organization
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) throw new Error('No user found');
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile) throw new Error('No profile found');
 
       // Load users from same organization (READ ONLY)
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          id,
-          email,
-          user_profiles (
-            full_name,
-            role,
-            departments (
-              name
-            )
-          )
-        `)
-        .eq('user_profiles.organization_id', profile.organization_id)
-        .order('email');
+      const usersResponse = await apiClient.userProfiles.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'email'
+      });
 
-      if (error) throw error;
-      setUsers(data || []);
+      // Load departments to map names
+      const deptsResponse = await apiClient.departments.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id })
+      });
+
+      const deptMap = new Map(deptsResponse.items.map((d: any) => [d.id, d.name]));
+
+      const formattedUsers = usersResponse.items.map((u: any) => ({
+        ...u,
+        department_name: deptMap.get(u.department_id) || 'N/A',
+      }));
+
+      setUsers(formattedUsers);
     } catch (error: any) {
       console.error('Error loading users:', error);
       toast.error('Error al cargar usuarios: ' + error.message);
@@ -92,7 +91,7 @@ export default function HRUsers() {
 
   const filteredUsers = users.filter(user =>
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.user_profiles?.[0]?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    user.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -138,16 +137,16 @@ export default function HRUsers() {
               {filteredUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">
-                    {user.user_profiles?.[0]?.full_name || 'N/A'}
+                    {user.full_name || 'N/A'}
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                      {user.user_profiles?.[0]?.role || 'N/A'}
+                      {user.role || 'N/A'}
                     </span>
                   </TableCell>
                   <TableCell>
-                    {user.user_profiles?.[0]?.departments?.name || 'N/A'}
+                    {user.department_name || 'N/A'}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -174,7 +173,7 @@ export default function HRUsers() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-slate-700">Nombre Completo</label>
-                <p className="text-slate-900">{selectedUser.user_profiles?.[0]?.full_name || 'N/A'}</p>
+                <p className="text-slate-900">{selectedUser.full_name || 'N/A'}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Email</label>
@@ -182,11 +181,11 @@ export default function HRUsers() {
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Rol</label>
-                <p className="text-slate-900">{selectedUser.user_profiles?.[0]?.role || 'N/A'}</p>
+                <p className="text-slate-900">{selectedUser.role || 'N/A'}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Departamento</label>
-                <p className="text-slate-900">{selectedUser.user_profiles?.[0]?.departments?.name || 'N/A'}</p>
+                <p className="text-slate-900">{selectedUser.department_name || 'N/A'}</p>
               </div>
             </div>
           )}

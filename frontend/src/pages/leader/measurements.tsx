@@ -1,10 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getBiometricMeasurements } from '@/lib/supabase-admin';
+import { Badge } from '@/components/ui/badge';
+import { Calendar, TrendingUp, Users } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import SectionHeader from '@/components/dashboard/SectionHeader';
+import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
+import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
+
+interface TeamMeasurement {
+  id: string;
+  user_id: string;
+  created_at: string;
+  wellness_index_score: number;
+  mental_score: number;
+  physiological_score: number;
+  vital_index_score: number;
+  heart_rate: number;
+  ai_stress: number;
+  ai_fatigue: number;
+  ai_cognitive_load: number;
+  ai_recovery: number;
+  mental_stress_index: number;
+  user_profile?: {
+    full_name: string;
+    email: string;
+  };
+}
 
 export default function LeaderMeasurements() {
-  const [measurements, setMeasurements] = useState<any[]>([]);
+  const [measurements, setMeasurements] = useState<TeamMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [departmentName, setDepartmentName] = useState('');
 
   useEffect(() => {
     loadMeasurements();
@@ -12,8 +38,62 @@ export default function LeaderMeasurements() {
 
   async function loadMeasurements() {
     try {
-      const data = await getBiometricMeasurements();
-      setMeasurements(data.slice(0, 50));
+      setLoading(true);
+
+      // Get current user's department
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('User not authenticated:', userError);
+        return;
+      }
+
+      // Get user profile to find department_id
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('department_id, departments(name)')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError || !profile?.department_id) {
+        console.error('Error loading profile:', profileError);
+        return;
+      }
+
+      setDepartmentName(profile.departments?.name || 'Departamento');
+
+      // Get all team members in the same department
+      const { data: members, error: membersError } = await supabase
+        .from('user_profiles')
+        .select('user_id, full_name, email')
+        .eq('department_id', profile.department_id);
+
+      if (membersError) {
+        console.error('Error loading team members:', membersError);
+        return;
+      }
+
+      // Get recent measurements for all team members
+      const memberIds = members?.map(m => m.user_id) || [];
+      const { data: scans, error: scansError } = await supabase
+        .from('biometric_measurements')
+        .select('*')
+        .in('user_id', memberIds)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (scansError) {
+        console.error('Error loading measurements:', scansError);
+        return;
+      }
+
+      // Map user profiles to measurements
+      const measurementsWithProfiles = scans?.map(scan => ({
+        ...scan,
+        user_profile: members?.find(m => m.user_id === scan.user_id)
+      })) || [];
+
+      console.log('✅ Loaded', measurementsWithProfiles.length, 'team measurements');
+      setMeasurements(measurementsWithProfiles);
     } catch (error) {
       console.error('Error loading measurements:', error);
     } finally {
@@ -29,51 +109,176 @@ export default function LeaderMeasurements() {
     );
   }
 
+  // Calculate team averages
+  const avgWellness = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.wellness_index_score || 0), 0) / measurements.length
+    : 0;
+  const avgStress = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.ai_stress || 0), 0) / measurements.length
+    : 0;
+  const avgFatigue = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.ai_fatigue || 0), 0) / measurements.length
+    : 0;
+  const avgRecovery = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.ai_recovery || 0), 0) / measurements.length
+    : 0;
+  const avgCognitiveLoad = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.ai_cognitive_load || 0), 0) / measurements.length
+    : 0;
+  const avgHeartRate = measurements.length > 0
+    ? measurements.reduce((acc, m) => acc + (m.heart_rate || 0), 0) / measurements.length
+    : 0;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Historial del Equipo</h1>
-        <p className="text-slate-600 mt-2">Mediciones biométricas del departamento</p>
+    <div className="min-h-screen bg-gray-50 p-5">
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-6">
+        <Card className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl shadow-xl p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">
+                📊 Mediciones del Equipo
+              </h1>
+              <p className="text-indigo-100">
+                {departmentName}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-5xl font-bold">{measurements.length}</div>
+              <div className="text-sm text-indigo-100">Escaneos Recientes</div>
+            </div>
+          </div>
+        </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Mediciones Recientes</CardTitle>
-          <CardDescription>Últimas mediciones del equipo</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Team Averages */}
+        <div>
+          <SectionHeader
+            title="Promedios del Equipo"
+            description="Indicadores principales del departamento"
+            metricCount={6}
+            icon="📈"
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <BiometricGaugeWithInfo
+              value={avgWellness}
+              indicatorCode="global_health_score"
+              label="Bienestar Promedio"
+            />
+
+            <BiometricGaugeWithInfo
+              value={avgStress}
+              indicatorCode="mental_stress_index"
+              label="Estrés Promedio"
+            />
+
+            <BiometricGaugeWithInfo
+              value={avgFatigue}
+              indicatorCode="mental_score"
+              label="Fatiga Promedio"
+            />
+
+            <BiometricGaugeWithInfo
+              value={avgCognitiveLoad}
+              indicatorCode="mental_score"
+              label="Carga Cognitiva"
+            />
+
+            <BiometricGaugeWithInfo
+              value={avgRecovery}
+              indicatorCode="physical_score"
+              label="Recuperación"
+            />
+
+            <BiometricGaugeWithInfo
+              value={avgHeartRate}
+              indicatorCode="heart_rate"
+              label="Frecuencia Cardíaca"
+            />
+          </div>
+        </div>
+
+        {/* Recent Measurements */}
+        <div>
+          <SectionHeader
+            title="Mediciones Recientes"
+            description={`Últimos ${measurements.length} escaneos del equipo`}
+            metricCount={measurements.length}
+            icon="📋"
+          />
+
+          <div className="grid grid-cols-1 gap-4">
             {measurements.length === 0 ? (
-              <p className="text-sm text-slate-600">No hay mediciones registradas</p>
+              <Card className="bg-white rounded-2xl p-12 text-center">
+                <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  No hay mediciones registradas
+                </h3>
+                <p className="text-gray-500">
+                  Los escaneos del equipo aparecerán aquí
+                </p>
+              </Card>
             ) : (
               measurements.map((measurement) => (
-                <div key={measurement.id} className="border-b pb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">Usuario: {measurement.user_id}</p>
-                    <p className="text-xs text-slate-600">
-                      {new Date(measurement.created_at).toLocaleString('es-MX')}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-slate-600">Estrés:</span>{' '}
-                      <span className="font-medium">{measurement.stress_level}</span>
+                <Card key={measurement.id} className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-base">
+                          {measurement.user_profile?.full_name || 'Usuario'}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          {new Date(measurement.created_at).toLocaleString('es-ES')}
+                        </CardDescription>
+                      </div>
+                      <Badge 
+                        style={{ 
+                          backgroundColor: getWellnessColor(measurement.wellness_index_score),
+                          color: 'white'
+                        }}
+                      >
+                        {getWellnessStatusString(measurement.wellness_index_score)}
+                      </Badge>
                     </div>
-                    <div>
-                      <span className="text-slate-600">Fatiga:</span>{' '}
-                      <span className="font-medium">{measurement.fatigue_level}</span>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+                      <div>
+                        <div className="text-gray-500 text-xs">Bienestar</div>
+                        <div className="text-xl font-bold" style={{ color: getWellnessColor(measurement.wellness_index_score) }}>
+                          {measurement.wellness_index_score?.toFixed(1) || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Estrés</div>
+                        <div className="text-xl font-bold">{measurement.ai_stress?.toFixed(1) || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Fatiga</div>
+                        <div className="text-xl font-bold">{measurement.ai_fatigue?.toFixed(1) || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Carga Cognitiva</div>
+                        <div className="text-xl font-bold">{measurement.ai_cognitive_load?.toFixed(1) || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Recuperación</div>
+                        <div className="text-xl font-bold">{measurement.ai_recovery?.toFixed(1) || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">FC</div>
+                        <div className="text-xl font-bold">{measurement.heart_rate?.toFixed(0) || 'N/A'} bpm</div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-slate-600">Recuperación:</span>{' '}
-                      <span className="font-medium">{measurement.recovery_level}</span>
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

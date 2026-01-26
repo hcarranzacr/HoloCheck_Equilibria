@@ -28,9 +28,9 @@ interface OrganizationBranding {
   primary_color: string | null;
   secondary_color: string | null;
   font_family: string | null;
-  custom_css: string | null;
+  slogan: string | null;
+  message: string | null;
   created_at: string;
-  updated_at: string;
   organizations?: {
     name: string;
   };
@@ -49,7 +49,8 @@ export default function OrganizationBranding() {
     primary_color: '#3b82f6',
     secondary_color: '#10b981',
     font_family: 'Inter',
-    custom_css: '',
+    slogan: '',
+    message: '',
   });
 
   useEffect(() => {
@@ -60,31 +61,50 @@ export default function OrganizationBranding() {
     try {
       setLoading(true);
       
-      // Load organizations
+      console.log('🔍 [Branding] Loading data from Supabase...');
+      
+      // Load organizations - only select columns that exist (NO is_active column)
       const { data: orgsData, error: orgsError } = await supabase
         .from('organizations')
         .select('id, name')
-        .eq('is_active', true)
         .order('name');
 
-      if (orgsError) throw orgsError;
+      if (orgsError) {
+        console.error('❌ [Branding] Organizations error:', orgsError);
+        throw orgsError;
+      }
+
+      console.log('✅ [Branding] Loaded', orgsData?.length || 0, 'organizations');
       setOrganizations(orgsData || []);
 
-      // Load brandings with organization names
+      // Load brandings with organization names - only select columns that exist
       const { data: brandingsData, error: brandingsError } = await supabase
         .from('organization_branding')
         .select(`
-          *,
+          id,
+          organization_id,
+          logo_url,
+          primary_color,
+          secondary_color,
+          font_family,
+          slogan,
+          message,
+          created_at,
           organizations (
             name
           )
         `)
         .order('created_at', { ascending: false });
 
-      if (brandingsError) throw brandingsError;
+      if (brandingsError) {
+        console.error('❌ [Branding] Brandings error:', brandingsError);
+        throw brandingsError;
+      }
+
+      console.log('✅ [Branding] Loaded', brandingsData?.length || 0, 'brandings');
       setBrandings(brandingsData || []);
     } catch (error: any) {
-      console.error('Error loading data:', error);
+      console.error('❌ [Branding] Error loading data:', error);
       toast.error('Error al cargar datos: ' + error.message);
     } finally {
       setLoading(false);
@@ -103,8 +123,8 @@ export default function OrganizationBranding() {
             primary_color: formData.primary_color,
             secondary_color: formData.secondary_color,
             font_family: formData.font_family,
-            custom_css: formData.custom_css || null,
-            updated_at: new Date().toISOString(),
+            slogan: formData.slogan || null,
+            message: formData.message || null,
           })
           .eq('id', editingBranding.id);
 
@@ -119,7 +139,8 @@ export default function OrganizationBranding() {
             primary_color: formData.primary_color,
             secondary_color: formData.secondary_color,
             font_family: formData.font_family,
-            custom_css: formData.custom_css || null,
+            slogan: formData.slogan || null,
+            message: formData.message || null,
           }]);
 
         if (error) throw error;
@@ -161,7 +182,8 @@ export default function OrganizationBranding() {
       primary_color: branding.primary_color || '#3b82f6',
       secondary_color: branding.secondary_color || '#10b981',
       font_family: branding.font_family || 'Inter',
-      custom_css: branding.custom_css || '',
+      slogan: branding.slogan || '',
+      message: branding.message || '',
     });
     setIsDialogOpen(true);
   }
@@ -174,7 +196,8 @@ export default function OrganizationBranding() {
       primary_color: '#3b82f6',
       secondary_color: '#10b981',
       font_family: 'Inter',
-      custom_css: '',
+      slogan: '',
+      message: '',
     });
   }
 
@@ -183,7 +206,7 @@ export default function OrganizationBranding() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Branding Organizacional</h1>
@@ -225,7 +248,7 @@ export default function OrganizationBranding() {
                 <Input
                   value={formData.logo_url}
                   onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
-                  placeholder="https://ejemplo.com/logo.png"
+                  placeholder="/images/photo1769390021.jpg"
                 />
                 {formData.logo_url && (
                   <div className="mt-2 p-4 border rounded-lg bg-slate-50">
@@ -239,6 +262,23 @@ export default function OrganizationBranding() {
                     />
                   </div>
                 )}
+              </div>
+              <div>
+                <label className="text-sm font-medium">Slogan</label>
+                <Input
+                  value={formData.slogan}
+                  onChange={(e) => setFormData({ ...formData, slogan: e.target.value })}
+                  placeholder="Slogan de la organización"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Mensaje</label>
+                <Textarea
+                  value={formData.message}
+                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                  placeholder="Mensaje de bienvenida"
+                  rows={3}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -288,16 +328,6 @@ export default function OrganizationBranding() {
                   <option value="Montserrat">Montserrat</option>
                 </select>
               </div>
-              <div>
-                <label className="text-sm font-medium">CSS Personalizado</label>
-                <Textarea
-                  value={formData.custom_css}
-                  onChange={(e) => setFormData({ ...formData, custom_css: e.target.value })}
-                  placeholder=".custom-class { color: red; }"
-                  rows={4}
-                  className="font-mono text-sm"
-                />
-              </div>
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"
@@ -342,7 +372,7 @@ export default function OrganizationBranding() {
                 <TableHead>Logo</TableHead>
                 <TableHead>Colores</TableHead>
                 <TableHead>Fuente</TableHead>
-                <TableHead>Última Actualización</TableHead>
+                <TableHead>Slogan</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -381,8 +411,8 @@ export default function OrganizationBranding() {
                     </div>
                   </TableCell>
                   <TableCell>{branding.font_family || 'Inter'}</TableCell>
-                  <TableCell>
-                    {new Date(branding.updated_at).toLocaleDateString()}
+                  <TableCell className="max-w-xs truncate">
+                    {branding.slogan || '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -29,41 +29,52 @@ export default function OrgMeasurements() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
 
-      const { data } = await supabase
-        .from('measurements')
-        .select(`
-          id,
-          user_id,
-          health_score,
-          measurement_date,
-          user_profiles!inner (
-            full_name,
-            departments (name)
-          )
-        `)
-        .eq('organization_id', profile.organization_id)
-        .order('measurement_date', { ascending: false })
-        .limit(100);
+      // Get measurements for the organization
+      const measurementsResponse = await apiClient.measurements.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: '-measurement_date',
+        limit: 100
+      });
 
-      const formattedMeasurements = (data || []).map(m => ({
-        id: m.id,
-        user_id: m.user_id,
-        health_score: m.health_score,
-        measurement_date: m.measurement_date,
-        user_name: (m.user_profiles as any)?.full_name || 'Usuario',
-        department_name: (m.user_profiles as any)?.departments?.name || 'Sin departamento',
-      }));
+      // Get user profiles to map user names and departments
+      const userIds = [...new Set(measurementsResponse.items.map((m: any) => m.user_id))];
+      const usersResponse = await apiClient.userProfiles.listAll({
+        query: JSON.stringify({ user_id: { $in: userIds } })
+      });
+
+      // Get departments
+      const deptIds = [...new Set(usersResponse.items.map((u: any) => u.department_id).filter(Boolean))];
+      const deptsResponse = await apiClient.departments.listAll({
+        query: JSON.stringify({ id: { $in: deptIds } })
+      });
+
+      const userMap = new Map(usersResponse.items.map((u: any) => [u.user_id, u]));
+      const deptMap = new Map(deptsResponse.items.map((d: any) => [d.id, d.name]));
+
+      const formattedMeasurements = measurementsResponse.items.map((m: any) => {
+        const userProfile = userMap.get(m.user_id);
+        return {
+          id: m.id,
+          user_id: m.user_id,
+          health_score: m.health_score,
+          measurement_date: m.measurement_date,
+          user_name: userProfile?.full_name || 'Usuario',
+          department_name: deptMap.get(userProfile?.department_id) || 'Sin departamento',
+        };
+      });
 
       setMeasurements(formattedMeasurements);
     } catch (error) {

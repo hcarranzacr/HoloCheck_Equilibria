@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 export default function Login() {
   const { logActivity } = useActivityLogger();
@@ -25,17 +25,37 @@ export default function Login() {
     try {
       setLoading(true);
       
+      console.log('🔐 [Login] Attempting login with Supabase...');
+      
+      // Use Supabase Auth directly
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ [Login] Supabase error:', error);
+        throw new Error(error.message);
+      }
 
+      if (!data.session) {
+        throw new Error('No se pudo crear la sesión');
+      }
+
+      console.log('✅ [Login] Login successful:', {
+        userId: data.user?.id,
+        email: data.user?.email,
+        hasSession: !!data.session
+      });
+
+      // Store the token
+      localStorage.setItem('sb-token', data.session.access_token);
+      
       await logActivity('login', { email });
       toast.success('Inicio de sesión exitoso');
       navigate('/');
     } catch (error: any) {
+      console.error('❌ [Login] Login error:', error);
       toast.error(error.message || 'Error al iniciar sesión');
       await logActivity('login_error', { email, error: error.message }, 'error');
     } finally {

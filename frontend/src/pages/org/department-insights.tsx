@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -43,28 +43,37 @@ export default function DepartmentInsights() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
 
-      const { data } = await supabase
-        .from('departments')
-        .select('id, name')
-        .eq('organization_id', profile.organization_id)
-        .eq('is_active', true)
-        .order('name');
+      // Get departments for the organization
+      const response = await apiClient.departments.listAll({
+        query: JSON.stringify({ 
+          organization_id: profile.organization_id,
+          is_active: true 
+        }),
+        sort: 'name'
+      });
 
-      setDepartments(data || []);
+      const depts = response.items.map((d: any) => ({
+        id: d.id,
+        name: d.name
+      }));
+
+      setDepartments(depts);
       
-      if (data && data.length > 0) {
-        setSelectedDept(data[0].id);
+      if (depts.length > 0) {
+        setSelectedDept(depts[0].id);
       }
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -80,27 +89,29 @@ export default function DepartmentInsights() {
 
   async function loadDepartmentStats(deptId: string) {
     try {
-      // Get users count
-      const { data: users, count: usersCount } = await supabase
-        .from('user_profiles')
-        .select('id, is_active', { count: 'exact' })
-        .eq('department_id', deptId);
+      // Get users for the department
+      const usersResponse = await apiClient.userProfiles.listAll({
+        query: JSON.stringify({ department_id: deptId })
+      });
 
-      const activeUsers = users?.filter(u => u.is_active).length || 0;
+      const users = usersResponse.items || [];
+      const totalUsers = users.length;
+      const activeUsers = users.filter((u: any) => u.is_active).length;
 
-      // Get measurements
-      const { data: measurements } = await supabase
-        .from('measurements')
-        .select('health_score')
-        .in('user_id', users?.map(u => u.id) || []);
+      // Get measurements for these users
+      const userIds = users.map((u: any) => u.user_id);
+      const measurementsResponse = await apiClient.measurements.listAll({
+        query: JSON.stringify({ user_id: { $in: userIds } })
+      });
 
-      const totalMeasurements = measurements?.length || 0;
+      const measurements = measurementsResponse.items || [];
+      const totalMeasurements = measurements.length;
       const avgHealthScore = totalMeasurements > 0
-        ? measurements.reduce((sum, m) => sum + (m.health_score || 0), 0) / totalMeasurements
+        ? measurements.reduce((sum: number, m: any) => sum + (m.health_score || 0), 0) / totalMeasurements
         : 0;
 
       setStats({
-        totalUsers: usersCount || 0,
+        totalUsers,
         totalMeasurements,
         avgHealthScore: Math.round(avgHealthScore * 10) / 10,
         activeUsers,

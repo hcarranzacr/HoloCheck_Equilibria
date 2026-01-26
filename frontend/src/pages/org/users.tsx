@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,47 +51,41 @@ export default function OrgUsers() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
       
       setOrganizationId(profile.organization_id);
 
       // Load departments
-      const { data: depts } = await supabase
-        .from('departments')
-        .select('id, name')
-        .eq('organization_id', profile.organization_id)
-        .order('name');
+      const deptsResponse = await apiClient.departments.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'name'
+      });
 
-      setDepartments(depts || []);
+      setDepartments(deptsResponse.items || []);
 
-      // Load users with department names
-      const { data: usersData } = await supabase
-        .from('user_profiles')
-        .select(`
-          id,
-          user_id,
-          full_name,
-          email,
-          role,
-          department_id,
-          is_active,
-          departments (name)
-        `)
-        .eq('organization_id', profile.organization_id)
-        .order('full_name');
+      // Load users
+      const usersResponse = await apiClient.userProfiles.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'full_name'
+      });
 
-      const formattedUsers = (usersData || []).map(u => ({
+      // Map department names
+      const deptMap = new Map(deptsResponse.items.map((d: any) => [d.id, d.name]));
+      
+      const formattedUsers = usersResponse.items.map((u: any) => ({
         ...u,
-        department_name: (u.departments as any)?.name || 'Sin departamento',
+        department_name: deptMap.get(u.department_id) || 'Sin departamento',
       }));
 
       setUsers(formattedUsers);
@@ -119,17 +113,12 @@ export default function OrgUsers() {
       }
 
       if (editingUser) {
-        const { error } = await supabase
-          .from('user_profiles')
-          .update({
-            full_name: formData.full_name,
-            email: formData.email,
-            role: formData.role,
-            department_id: formData.department_id,
-          })
-          .eq('id', editingUser.id);
-
-        if (error) throw error;
+        await apiClient.userProfiles.update(editingUser.id, {
+          full_name: formData.full_name,
+          email: formData.email,
+          role: formData.role,
+          department_id: formData.department_id,
+        });
 
         toast({
           title: 'Éxito',
@@ -160,12 +149,7 @@ export default function OrgUsers() {
     if (!confirm('¿Estás seguro de desactivar este usuario?')) return;
 
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ is_active: false })
-        .eq('id', userId);
-
-      if (error) throw error;
+      await apiClient.userProfiles.update(userId, { is_active: false });
 
       toast({
         title: 'Éxito',

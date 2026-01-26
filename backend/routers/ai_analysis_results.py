@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from services.ai_analysis_results import Ai_analysis_resultsService
+from services.audit_service import AuditService
 from dependencies.auth import get_current_user
 from schemas.auth import UserResponse
 
@@ -216,6 +217,22 @@ async def create_ai_analysis_results(
         if not result:
             raise HTTPException(status_code=400, detail="Failed to create ai_analysis_results")
         
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="create",
+                entity_type="ai_analysis_results",
+                entity_id=str(result.id),
+                new_data=data.model_dump(),
+                organization_id=data.organization_id,
+                department_id=data.department_id,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
+        
         logger.info(f"Ai_analysis_results created successfully with id: {result.id}")
         return result
     except ValueError as e:
@@ -243,6 +260,22 @@ async def create_ai_analysis_resultss_batch(
             result = await service.create(item_data.model_dump(), user_id=str(current_user.id))
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="create",
+                        entity_type="ai_analysis_results",
+                        entity_id=str(result.id),
+                        new_data=item_data.model_dump(),
+                        organization_id=item_data.organization_id,
+                        department_id=item_data.department_id,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch created {len(results)} ai_analysis_resultss successfully")
         return results
@@ -266,11 +299,32 @@ async def update_ai_analysis_resultss_batch(
     
     try:
         for item in request.items:
+            # Get old data before update
+            old_entity = await service.get_by_id(item.id, user_id=str(current_user.id))
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             # Only include non-None values for partial updates
             update_dict = {k: v for k, v in item.updates.model_dump().items() if v is not None}
             result = await service.update(item.id, update_dict, user_id=str(current_user.id))
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="update",
+                        entity_type="ai_analysis_results",
+                        entity_id=str(item.id),
+                        old_data=old_data,
+                        new_data=update_dict,
+                        organization_id=str(result.organization_id) if result.organization_id else None,
+                        department_id=str(result.department_id) if result.department_id else None,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch updated {len(results)} ai_analysis_resultss successfully")
         return results
@@ -292,12 +346,34 @@ async def update_ai_analysis_results(
 
     service = Ai_analysis_resultsService(db)
     try:
+        # Get old data before update
+        old_entity = await service.get_by_id(id, user_id=str(current_user.id))
+        if not old_entity:
+            logger.warning(f"Ai_analysis_results with id {id} not found for update")
+            raise HTTPException(status_code=404, detail="Ai_analysis_results not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
         # Only include non-None values for partial updates
         update_dict = {k: v for k, v in data.model_dump().items() if v is not None}
         result = await service.update(id, update_dict, user_id=str(current_user.id))
-        if not result:
-            logger.warning(f"Ai_analysis_results with id {id} not found for update")
-            raise HTTPException(status_code=404, detail="Ai_analysis_results not found")
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="update",
+                entity_type="ai_analysis_results",
+                entity_id=str(id),
+                old_data=old_data,
+                new_data=update_dict,
+                organization_id=str(result.organization_id) if result.organization_id else None,
+                department_id=str(result.department_id) if result.department_id else None,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Ai_analysis_results {id} updated successfully")
         return result
@@ -325,9 +401,29 @@ async def delete_ai_analysis_resultss_batch(
     
     try:
         for item_id in request.ids:
+            # Get old data before delete
+            old_entity = await service.get_by_id(item_id, user_id=str(current_user.id))
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             success = await service.delete(item_id, user_id=str(current_user.id))
             if success:
                 deleted_count += 1
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="delete",
+                        entity_type="ai_analysis_results",
+                        entity_id=str(item_id),
+                        old_data=old_data,
+                        organization_id=str(old_entity.organization_id) if old_entity and old_entity.organization_id else None,
+                        department_id=str(old_entity.department_id) if old_entity and old_entity.department_id else None,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch deleted {deleted_count} ai_analysis_resultss successfully")
         return {"message": f"Successfully deleted {deleted_count} ai_analysis_resultss", "deleted_count": deleted_count}
@@ -348,10 +444,31 @@ async def delete_ai_analysis_results(
     
     service = Ai_analysis_resultsService(db)
     try:
-        success = await service.delete(id, user_id=str(current_user.id))
-        if not success:
+        # Get old data before delete
+        old_entity = await service.get_by_id(id, user_id=str(current_user.id))
+        if not old_entity:
             logger.warning(f"Ai_analysis_results with id {id} not found for deletion")
             raise HTTPException(status_code=404, detail="Ai_analysis_results not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
+        success = await service.delete(id, user_id=str(current_user.id))
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="delete",
+                entity_type="ai_analysis_results",
+                entity_id=str(id),
+                old_data=old_data,
+                organization_id=str(old_entity.organization_id) if old_entity.organization_id else None,
+                department_id=str(old_entity.department_id) if old_entity.department_id else None,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Ai_analysis_results {id} deleted successfully")
         return {"message": "Ai_analysis_results deleted successfully", "id": id}

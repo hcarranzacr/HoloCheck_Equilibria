@@ -1,19 +1,32 @@
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
+from datetime import datetime
 from core.database import Base
-from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 
 class System_logs(Base):
     __tablename__ = "system_logs"
     __table_args__ = {"extend_existing": True}
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("user_profiles.user_id"), nullable=True)
+    role = Column(String, nullable=True)
     log_type = Column(String, nullable=False)
-    user_id = Column(String, nullable=True)
-    organization_id = Column(UUID(as_uuid=True), nullable=True)
-    action = Column(String, nullable=False)
-    resource = Column(String, nullable=True)
-    ip_address = Column(String, nullable=True)
-    user_agent = Column(String, nullable=True)
-    extra_data = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=True)
+    severity = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    module = Column(String, nullable=True)
+    action = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    payload = Column(JSONB, nullable=True)
+    route = Column(String, nullable=True)
+    browser = Column(String, nullable=True)
+    device = Column(String, nullable=True)
+    ip_address = Column(INET, nullable=True)
+    environment = Column(String, default='production')
+    correlation_id = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+# Alias for backward compatibility
+SystemLog = System_logs

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,27 +40,28 @@ export default function OrgDepartments() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
       
       setOrganizationId(profile.organization_id);
 
-      const { data, error } = await supabase
-        .from('departments')
-        .select('*')
-        .eq('organization_id', profile.organization_id)
-        .order('name');
+      // Get departments for the organization
+      const response = await apiClient.departments.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'name'
+      });
 
-      if (error) throw error;
-      setDepartments(data || []);
+      setDepartments(response.items || []);
     } catch (error) {
       console.error('Error loading departments:', error);
       toast({
@@ -85,31 +86,22 @@ export default function OrgDepartments() {
       }
 
       if (editingDept) {
-        const { error } = await supabase
-          .from('departments')
-          .update({
-            name: formData.name,
-            description: formData.description,
-          })
-          .eq('id', editingDept.id);
-
-        if (error) throw error;
+        await apiClient.departments.update(editingDept.id, {
+          name: formData.name,
+          description: formData.description,
+        });
 
         toast({
           title: 'Éxito',
           description: 'Departamento actualizado correctamente',
         });
       } else {
-        const { error } = await supabase
-          .from('departments')
-          .insert({
-            organization_id: organizationId,
-            name: formData.name,
-            description: formData.description,
-            is_active: true,
-          });
-
-        if (error) throw error;
+        await apiClient.departments.create({
+          organization_id: organizationId,
+          name: formData.name,
+          description: formData.description,
+          is_active: true,
+        });
 
         toast({
           title: 'Éxito',
@@ -135,12 +127,7 @@ export default function OrgDepartments() {
     if (!confirm('¿Estás seguro de eliminar este departamento?')) return;
 
     try {
-      const { error } = await supabase
-        .from('departments')
-        .update({ is_active: false })
-        .eq('id', deptId);
-
-      if (error) throw error;
+      await apiClient.departments.update(deptId, { is_active: false });
 
       toast({
         title: 'Éxito',

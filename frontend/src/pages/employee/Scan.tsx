@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { loadWmeaSdk } from "@/lib/wmeaSdk";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/api-client";
 import { useActivityLogger } from "@/hooks/useActivityLogger";
 import { toast } from "sonner";
 import { Camera, Info, X, AlertCircle } from "lucide-react";
@@ -122,15 +122,15 @@ export default function EmployeeScan() {
 
   async function loadCurrentUser() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await apiClient.auth.me();
       
       if (user) {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
+        const profileResponse = await apiClient.userProfiles.list({
+          query: JSON.stringify({ user_id: user.id }),
+          limit: 1
+        });
         
+        const profile = profileResponse?.items?.[0];
         if (profile) {
           setCurrentUser(profile);
         }
@@ -160,7 +160,9 @@ export default function EmployeeScan() {
       app.on.results = () => {};
       app.on.error = () => {};
       app.on.event = () => {};
-    } catch {}
+    } catch (err) {
+      console.error('Error detaching handlers:', err);
+    }
   }, []);
 
   const freezeSdk = useCallback(async () => {
@@ -175,7 +177,9 @@ export default function EmployeeScan() {
       if (typeof app.stop === "function") {
         await app.stop();
       }
-    } catch {}
+    } catch (err) {
+      console.error('Error freezing SDK:', err);
+    }
   }, []);
 
   const stopAndDestroy = useCallback(async () => {
@@ -185,11 +189,15 @@ export default function EmployeeScan() {
     try {
       if (typeof app.cancel === "function") await app.cancel(true);
       else if (typeof app.stop === "function") await app.stop();
-    } catch {}
+    } catch (err) {
+      console.error('Error stopping SDK:', err);
+    }
 
     try {
       if (typeof app.destroy === "function") app.destroy();
-    } catch {}
+    } catch (err) {
+      console.error('Error destroying SDK:', err);
+    }
 
     appRef.current = null;
   }, []);
@@ -203,7 +211,9 @@ export default function EmployeeScan() {
     try {
       detachHandlers();
       await stopAndDestroy();
-    } catch {}
+    } catch (err) {
+      console.error('Error during auto-restart:', err);
+    }
 
     setTimeout(() => {
       window.location.reload();
@@ -259,13 +269,7 @@ export default function EmployeeScan() {
         global_health_score: points.HEALTH_SCORE?.value || null,
       };
 
-      const { data, error: saveError } = await supabase
-        .from('biometric_measurements')
-        .insert(measurementData)
-        .select()
-        .single();
-
-      if (saveError) throw saveError;
+      const data = await apiClient.measurements.create(measurementData);
 
       toast.success('Medición guardada exitosamente');
       
@@ -599,7 +603,9 @@ export default function EmployeeScan() {
       if (appInstance && typeof appInstance.destroy === "function") {
         try {
           appInstance.destroy();
-        } catch {}
+        } catch (err) {
+          console.error('Error destroying app instance:', err);
+        }
       }
       appRef.current = null;
     };

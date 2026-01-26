@@ -94,7 +94,7 @@ const navigation: NavItem[] = [
       { title: 'Sectores e Industrias', href: '/admin/sectors-industries', icon: Briefcase },
       { title: 'Planes de Suscripción', href: '/admin/subscription-plans', icon: FileText },
       { title: 'Uso de Créditos', href: '/admin/usage-logs', icon: Activity },
-      { title: 'Prompts Globales', href: '/admin/global-prompts', icon: Zap },
+      { title: 'Prompts', href: '/admin/prompts', icon: Zap },
       { title: 'Análisis IA', href: '/admin/ai-analyses', icon: Brain },
       { title: 'Logs del Sistema', href: '/admin/system-logs', icon: FileText },
       { title: 'Configuración', href: '/admin/settings', icon: Settings },

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,27 +40,28 @@ export default function OrgPrompts() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
       
       setOrganizationId(profile.organization_id);
 
-      const { data, error } = await supabase
-        .from('prompts')
-        .select('*')
-        .eq('organization_id', profile.organization_id)
-        .order('prompt_name');
+      // Get prompts for the organization
+      const response = await apiClient.prompts.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'prompt_name'
+      });
 
-      if (error) throw error;
-      setPrompts(data || []);
+      setPrompts(response.items || []);
     } catch (error) {
       console.error('Error loading prompts:', error);
       toast({
@@ -85,31 +86,22 @@ export default function OrgPrompts() {
       }
 
       if (editingPrompt) {
-        const { error } = await supabase
-          .from('prompts')
-          .update({
-            prompt_name: formData.prompt_name,
-            prompt_text: formData.prompt_text,
-          })
-          .eq('id', editingPrompt.id);
-
-        if (error) throw error;
+        await apiClient.prompts.update(editingPrompt.id, {
+          prompt_name: formData.prompt_name,
+          prompt_text: formData.prompt_text,
+        });
 
         toast({
           title: 'Éxito',
           description: 'Prompt actualizado correctamente',
         });
       } else {
-        const { error } = await supabase
-          .from('prompts')
-          .insert({
-            organization_id: organizationId,
-            prompt_name: formData.prompt_name,
-            prompt_text: formData.prompt_text,
-            is_active: true,
-          });
-
-        if (error) throw error;
+        await apiClient.prompts.create({
+          organization_id: organizationId,
+          prompt_name: formData.prompt_name,
+          prompt_text: formData.prompt_text,
+          is_active: true,
+        });
 
         toast({
           title: 'Éxito',
@@ -135,12 +127,7 @@ export default function OrgPrompts() {
     if (!confirm('¿Estás seguro de eliminar este prompt?')) return;
 
     try {
-      const { error } = await supabase
-        .from('prompts')
-        .update({ is_active: false })
-        .eq('id', promptId);
-
-      if (error) throw error;
+      await apiClient.prompts.update(promptId, { is_active: false });
 
       toast({
         title: 'Éxito',

@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import Papa from 'papaparse';
 import {
   Table,
   TableBody,
@@ -28,23 +26,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Upload, Download, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 
 interface Department {
   id: string;
   name: string;
   organization_id: string;
-  leader_id: string | null;
   created_at: string;
-  organizations?: { name: string };
-  user_profiles?: { full_name: string };
+  organizations?: {
+    name: string;
+  };
+}
+
+interface Organization {
+  id: string;
+  name: string;
 }
 
 export default function AdminDepartments() {
-  const queryClient = useQueryClient();
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [selectedDept, setSelectedDept] = useState<Department | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterOrg, setFilterOrg] = useState('all');
@@ -52,128 +56,130 @@ export default function AdminDepartments() {
   const [formData, setFormData] = useState({
     name: '',
     organization_id: '',
-    leader_id: '',
   });
 
-  const { data: departments = [], isLoading } = useQuery({
-    queryKey: ['departments', searchTerm, filterOrg],
-    queryFn: async () => {
-      let query = supabase
-        .from('departments')
-        .select('*, organizations(name), user_profiles(full_name)')
-        .order('created_at', { ascending: false });
+  useEffect(() => {
+    loadData();
+  }, []);
 
-      if (searchTerm) {
-        query = query.ilike('name', `%${searchTerm}%`);
-      }
-      if (filterOrg !== 'all') {
-        query = query.eq('organization_id', filterOrg);
-      }
+  async function loadData() {
+    try {
+      setLoading(true);
+      
+      console.log('🔍 Loading departments and organizations from Supabase...');
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as Department[];
-    },
-  });
-
-  const { data: organizations = [] } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: async () => {
-      const { data, error } = await supabase
+      // Load organizations
+      const { data: orgsData, error: orgsError } = await supabase
         .from('organizations')
         .select('id, name')
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
+        .order('name', { ascending: true });
 
-  const { data: leaders = [] } = useQuery({
-    queryKey: ['leaders', formData.organization_id],
-    queryFn: async () => {
-      if (!formData.organization_id) return [];
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id, full_name')
-        .eq('organization_id', formData.organization_id)
-        .in('role', ['leader', 'admin_org'])
-        .order('full_name');
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!formData.organization_id,
-  });
+      if (orgsError) {
+        console.error('❌ Error loading organizations:', orgsError);
+        throw orgsError;
+      }
 
-  const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const { error } = await supabase.from('departments').insert([data]);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Departamento creado exitosamente');
-      setIsCreateOpen(false);
-      resetForm();
-    },
-    onError: (error: any) => {
-      toast.error(`Error al crear departamento: ${error.message}`);
-    },
-  });
+      console.log('✅ Loaded', orgsData?.length || 0, 'organizations');
+      setOrganizations(orgsData || []);
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof formData> }) => {
+      // Load ALL departments with organization names
+      const { data: deptsData, error: deptsError } = await supabase
+        .from('departments')
+        .select(`
+          *,
+          organizations (
+            name
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (deptsError) {
+        console.error('❌ Error loading departments:', deptsError);
+        throw deptsError;
+      }
+
+      console.log('✅ Loaded', deptsData?.length || 0, 'departments');
+      setDepartments(deptsData || []);
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      toast.error('Error al cargar datos: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreate() {
+    if (!formData.name || !formData.organization_id) {
+      toast.error('Por favor completa todos los campos requeridos');
+      return;
+    }
+
+    try {
       const { error } = await supabase
         .from('departments')
-        .update(data)
-        .eq('id', id);
+        .insert([formData]);
+
       if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      toast.success('Departamento creado exitosamente');
+      
+      setIsCreateOpen(false);
+      resetForm();
+      loadData();
+    } catch (error: any) {
+      console.error('Error creating department:', error);
+      toast.error('Error al crear departamento: ' + error.message);
+    }
+  }
+
+  async function handleUpdate() {
+    if (!selectedDept || !formData.name || !formData.organization_id) {
+      toast.error('Por favor completa todos los campos requeridos');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .update(formData)
+        .eq('id', selectedDept.id);
+
+      if (error) throw error;
       toast.success('Departamento actualizado exitosamente');
+      
       setIsEditOpen(false);
       setSelectedDept(null);
       resetForm();
-    },
-    onError: (error: any) => {
-      toast.error(`Error al actualizar departamento: ${error.message}`);
-    },
-  });
+      loadData();
+    } catch (error: any) {
+      console.error('Error updating department:', error);
+      toast.error('Error al actualizar departamento: ' + error.message);
+    }
+  }
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('departments').delete().eq('id', id);
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`¿Estás seguro de eliminar el departamento "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .delete()
+        .eq('id', id);
+
       if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['departments'] });
       toast.success('Departamento eliminado exitosamente');
-    },
-    onError: (error: any) => {
-      toast.error(`Error al eliminar departamento: ${error.message}`);
-    },
-  });
-
-  const bulkUploadMutation = useMutation({
-    mutationFn: async (depts: any[]) => {
-      const { error } = await supabase.from('departments').insert(depts);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Departamentos cargados exitosamente');
-      setIsBulkUploadOpen(false);
-    },
-    onError: (error: any) => {
-      toast.error(`Error en carga masiva: ${error.message}`);
-    },
-  });
+      loadData();
+    } catch (error: any) {
+      console.error('Error deleting department:', error);
+      toast.error('Error al eliminar departamento: ' + error.message);
+    }
+  }
 
   const resetForm = () => {
     setFormData({
       name: '',
       organization_id: '',
-      leader_id: '',
     });
   };
 
@@ -182,163 +188,90 @@ export default function AdminDepartments() {
     setFormData({
       name: dept.name,
       organization_id: dept.organization_id,
-      leader_id: dept.leader_id || '',
     });
     setIsEditOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este departamento?')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      complete: (results) => {
-        const validDepts = results.data.filter((row: any) => row.name && row.organization_id);
-        if (validDepts.length > 0) {
-          bulkUploadMutation.mutate(validDepts);
-        } else {
-          toast.error('No se encontraron departamentos válidos en el archivo');
-        }
-      },
-      error: (error) => {
-        toast.error(`Error al leer archivo: ${error.message}`);
-      },
-    });
-  };
-
-  const downloadTemplate = () => {
-    const csv = 'name,organization_id,leader_id\n' +
-                'Departamento Ejemplo,org-id,leader-id';
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'plantilla_departamentos.csv';
-    a.click();
-  };
+  // Filter departments
+  const filteredDepartments = departments.filter(dept => {
+    const matchesSearch = dept.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesOrg = filterOrg === 'all' || dept.organization_id === filterOrg;
+    return matchesSearch && matchesOrg;
+  });
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Gestión de Departamentos</h1>
-        <div className="flex gap-2">
-          <Button onClick={downloadTemplate} variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Plantilla CSV
-          </Button>
-          <Dialog open={isBulkUploadOpen} onOpenChange={setIsBulkUploadOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Upload className="w-4 h-4 mr-2" />
-                Carga Masiva
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Carga Masiva de Departamentos</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Sube un archivo CSV con las columnas: name, organization_id, leader_id
-                </p>
+        <div>
+          <h1 className="text-3xl font-bold">Gestión de Departamentos</h1>
+          <p className="text-slate-600 mt-1">Administra todos los departamentos del sistema</p>
+        </div>
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={resetForm}>
+              <Plus className="w-4 h-4 mr-2" />
+              Crear Departamento
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear Nuevo Departamento</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4">
+              <div>
+                <Label>Nombre *</Label>
                 <Input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={handleFileUpload}
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Nombre del departamento"
                 />
               </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
+              <div>
+                <Label>Organización *</Label>
+                <Select
+                  value={formData.organization_id}
+                  onValueChange={(value) => setFormData({ ...formData, organization_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar organización" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {organizations.map((org) => (
+                      <SelectItem key={org.id} value={org.id}>
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleCreate}
+                disabled={!formData.name || !formData.organization_id}
+              >
                 Crear Departamento
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Crear Nuevo Departamento</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4">
-                <div>
-                  <Label>Nombre</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Nombre del departamento"
-                  />
-                </div>
-                <div>
-                  <Label>Organización</Label>
-                  <Select
-                    value={formData.organization_id}
-                    onValueChange={(value) => setFormData({ ...formData, organization_id: value, leader_id: '' })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar organización" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {organizations.map((org: any) => (
-                        <SelectItem key={org.id} value={org.id}>
-                          {org.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Líder (Opcional)</Label>
-                  <Select
-                    value={formData.leader_id}
-                    onValueChange={(value) => setFormData({ ...formData, leader_id: value })}
-                    disabled={!formData.organization_id}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar líder" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {leaders.map((leader: any) => (
-                        <SelectItem key={leader.id} value={leader.id}>
-                          {leader.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  onClick={() => createMutation.mutate(formData)}
-                  disabled={!formData.name || !formData.organization_id}
-                >
-                  Crear Departamento
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="flex gap-4 mb-6">
-        <Input
-          placeholder="Buscar departamento..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-sm"
-        />
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <Input
+            placeholder="Buscar departamento..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
         <Select value={filterOrg} onValueChange={setFilterOrg}>
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-[250px]">
             <SelectValue placeholder="Filtrar por organización" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las organizaciones</SelectItem>
-            {organizations.map((org: any) => (
+            {organizations.map((org) => (
               <SelectItem key={org.id} value={org.id}>
                 {org.name}
               </SelectItem>
@@ -347,37 +280,35 @@ export default function AdminDepartments() {
         </Select>
       </div>
 
-      <div className="border rounded-lg">
+      <div className="border rounded-lg bg-white">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
               <TableHead>Organización</TableHead>
-              <TableHead>Líder</TableHead>
               <TableHead>Fecha de Creación</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">
+                <TableCell colSpan={4} className="text-center py-8">
                   Cargando...
                 </TableCell>
               </TableRow>
-            ) : departments.length === 0 ? (
+            ) : filteredDepartments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">
+                <TableCell colSpan={4} className="text-center py-8">
                   No se encontraron departamentos
                 </TableCell>
               </TableRow>
             ) : (
-              departments.map((dept) => (
+              filteredDepartments.map((dept) => (
                 <TableRow key={dept.id}>
                   <TableCell className="font-medium">{dept.name}</TableCell>
                   <TableCell>{dept.organizations?.name || '-'}</TableCell>
-                  <TableCell>{dept.user_profiles?.full_name || 'Sin asignar'}</TableCell>
-                  <TableCell>{new Date(dept.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(dept.created_at).toLocaleDateString('es-ES')}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       <Button
@@ -390,9 +321,9 @@ export default function AdminDepartments() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(dept.id)}
+                        onClick={() => handleDelete(dept.id, dept.name)}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 text-red-600" />
                       </Button>
                     </div>
                   </TableCell>
@@ -426,7 +357,7 @@ export default function AdminDepartments() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {organizations.map((org: any) => (
+                  {organizations.map((org) => (
                     <SelectItem key={org.id} value={org.id}>
                       {org.name}
                     </SelectItem>
@@ -434,30 +365,7 @@ export default function AdminDepartments() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Líder</Label>
-              <Select
-                value={formData.leader_id}
-                onValueChange={(value) => setFormData({ ...formData, leader_id: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {leaders.map((leader: any) => (
-                    <SelectItem key={leader.id} value={leader.id}>
-                      {leader.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              onClick={() =>
-                selectedDept &&
-                updateMutation.mutate({ id: selectedDept.id, data: formData })
-              }
-            >
+            <Button onClick={handleUpdate}>
               Actualizar Departamento
             </Button>
           </div>

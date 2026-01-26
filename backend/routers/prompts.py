@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from services.prompts import PromptsService
+from services.audit_service import AuditService
+from dependencies.auth import get_current_user
+from schemas.auth import UserResponse
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -183,6 +186,7 @@ async def get_prompts(
 @router.post("", response_model=PromptsResponse, status_code=201)
 async def create_prompts(
     data: PromptsData,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new prompts"""
@@ -193,6 +197,21 @@ async def create_prompts(
         result = await service.create(data.model_dump())
         if not result:
             raise HTTPException(status_code=400, detail="Failed to create prompts")
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="create",
+                entity_type="prompts",
+                entity_id=str(result.id),
+                new_data=data.model_dump(),
+                organization_id=data.organization_id,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Prompts created successfully with id: {result.id}")
         return result
@@ -207,6 +226,7 @@ async def create_prompts(
 @router.post("/batch", response_model=List[PromptsResponse], status_code=201)
 async def create_promptss_batch(
     request: PromptsBatchCreateRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create multiple promptss in a single request"""
@@ -220,6 +240,21 @@ async def create_promptss_batch(
             result = await service.create(item_data.model_dump())
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="create",
+                        entity_type="prompts",
+                        entity_id=str(result.id),
+                        new_data=item_data.model_dump(),
+                        organization_id=item_data.organization_id,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch created {len(results)} promptss successfully")
         return results
@@ -232,6 +267,7 @@ async def create_promptss_batch(
 @router.put("/batch", response_model=List[PromptsResponse])
 async def update_promptss_batch(
     request: PromptsBatchUpdateRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update multiple promptss in a single request"""
@@ -242,11 +278,31 @@ async def update_promptss_batch(
     
     try:
         for item in request.items:
+            # Get old data before update
+            old_entity = await service.get_by_id(item.id)
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             # Only include non-None values for partial updates
             update_dict = {k: v for k, v in item.updates.model_dump().items() if v is not None}
             result = await service.update(item.id, update_dict)
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="update",
+                        entity_type="prompts",
+                        entity_id=str(item.id),
+                        old_data=old_data,
+                        new_data=update_dict,
+                        organization_id=str(result.organization_id) if result.organization_id else None,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch updated {len(results)} promptss successfully")
         return results
@@ -260,6 +316,7 @@ async def update_promptss_batch(
 async def update_prompts(
     id: int,
     data: PromptsUpdateData,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an existing prompts"""
@@ -267,12 +324,33 @@ async def update_prompts(
 
     service = PromptsService(db)
     try:
+        # Get old data before update
+        old_entity = await service.get_by_id(id)
+        if not old_entity:
+            logger.warning(f"Prompts with id {id} not found for update")
+            raise HTTPException(status_code=404, detail="Prompts not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
         # Only include non-None values for partial updates
         update_dict = {k: v for k, v in data.model_dump().items() if v is not None}
         result = await service.update(id, update_dict)
-        if not result:
-            logger.warning(f"Prompts with id {id} not found for update")
-            raise HTTPException(status_code=404, detail="Prompts not found")
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="update",
+                entity_type="prompts",
+                entity_id=str(id),
+                old_data=old_data,
+                new_data=update_dict,
+                organization_id=str(result.organization_id) if result.organization_id else None,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Prompts {id} updated successfully")
         return result
@@ -289,6 +367,7 @@ async def update_prompts(
 @router.delete("/batch")
 async def delete_promptss_batch(
     request: PromptsBatchDeleteRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete multiple promptss by their IDs"""
@@ -299,9 +378,28 @@ async def delete_promptss_batch(
     
     try:
         for item_id in request.ids:
+            # Get old data before delete
+            old_entity = await service.get_by_id(item_id)
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             success = await service.delete(item_id)
             if success:
                 deleted_count += 1
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="delete",
+                        entity_type="prompts",
+                        entity_id=str(item_id),
+                        old_data=old_data,
+                        organization_id=str(old_entity.organization_id) if old_entity and old_entity.organization_id else None,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch deleted {deleted_count} promptss successfully")
         return {"message": f"Successfully deleted {deleted_count} promptss", "deleted_count": deleted_count}
@@ -314,6 +412,7 @@ async def delete_promptss_batch(
 @router.delete("/{id}")
 async def delete_prompts(
     id: int,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a single prompts by ID"""
@@ -321,10 +420,30 @@ async def delete_prompts(
     
     service = PromptsService(db)
     try:
-        success = await service.delete(id)
-        if not success:
+        # Get old data before delete
+        old_entity = await service.get_by_id(id)
+        if not old_entity:
             logger.warning(f"Prompts with id {id} not found for deletion")
             raise HTTPException(status_code=404, detail="Prompts not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
+        success = await service.delete(id)
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="delete",
+                entity_type="prompts",
+                entity_id=str(id),
+                old_data=old_data,
+                organization_id=str(old_entity.organization_id) if old_entity.organization_id else None,
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Prompts {id} deleted successfully")
         return {"message": "Prompts deleted successfully", "id": id}

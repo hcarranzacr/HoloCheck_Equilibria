@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -30,38 +30,41 @@ export default function OrgAIAnalyses() {
     try {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Get current user from backend
+      const user = await apiClient.auth.me();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
+      const profile = profileResponse?.items?.[0];
       if (!profile?.organization_id) return;
 
-      const { data } = await supabase
-        .from('ai_analyses')
-        .select(`
-          id,
-          user_id,
-          analysis_type,
-          analysis_result,
-          created_at,
-          user_profiles!inner (full_name)
-        `)
-        .eq('organization_id', profile.organization_id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // Get AI analyses for the organization
+      const response = await apiClient.aiAnalyses.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: '-created_at',
+        limit: 50
+      });
 
-      const formattedAnalyses = (data || []).map(a => ({
+      // Get user profiles to map user names
+      const userIds = [...new Set(response.items.map((a: any) => a.user_id))];
+      const usersResponse = await apiClient.userProfiles.listAll({
+        query: JSON.stringify({ user_id: { $in: userIds } })
+      });
+
+      const userMap = new Map(usersResponse.items.map((u: any) => [u.user_id, u.full_name || 'Usuario']));
+
+      const formattedAnalyses = response.items.map((a: any) => ({
         id: a.id,
         user_id: a.user_id,
         analysis_type: a.analysis_type,
         analysis_result: a.analysis_result,
         created_at: a.created_at,
-        user_name: (a.user_profiles as any)?.full_name || 'Usuario',
+        user_name: userMap.get(a.user_id) || 'Usuario',
       }));
 
       setAnalyses(formattedAnalyses);

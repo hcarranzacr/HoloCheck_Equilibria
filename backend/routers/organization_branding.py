@@ -10,6 +10,7 @@ from core.database import get_db
 from dependencies.auth import get_current_user
 from schemas.auth import UserResponse
 from models.organizations import OrganizationBranding, Organizations
+from services.audit_service import AuditService
 
 router = APIRouter(prefix="/api/v1/organization-branding", tags=["organization-branding"])
 
@@ -334,6 +335,22 @@ async def create_branding(
     )
     await db.commit()
     
+    # Audit logging
+    try:
+        await AuditService.log_crud_operation(
+            db=db,
+            actor_user_id=str(current_user.id),
+            action="create",
+            entity_type="organization_branding",
+            entity_id=branding_id,
+            new_data=data.dict(),
+            organization_id=data.organization_id,
+            role=current_user.role,
+        )
+    except Exception as audit_error:
+        # Log but don't fail the operation
+        pass
+    
     return {"id": branding_id, "message": "Branding created successfully"}
 
 
@@ -348,15 +365,18 @@ async def update_branding(
     if current_user.role not in ['admin_global', 'admin_platform']:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if branding exists
+    # Check if branding exists and get old data
     result = await db.execute(
-        "SELECT id FROM organization_branding WHERE id = :id",
+        "SELECT * FROM organization_branding WHERE id = :id",
         {"id": branding_id}
     )
     existing = result.fetchone()
     
     if not existing:
         raise HTTPException(status_code=404, detail="Branding not found")
+    
+    # Store old data for audit
+    old_data = {k: v for k, v in existing._mapping.items() if not k.startswith('_')}
     
     # Check slug uniqueness if updating slug
     if data.slug:
@@ -382,6 +402,22 @@ async def update_branding(
         query = f"UPDATE organization_branding SET {', '.join(update_fields)} WHERE id = :id"
         await db.execute(query, update_values)
         await db.commit()
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="update",
+                entity_type="organization_branding",
+                entity_id=branding_id,
+                old_data=old_data,
+                new_data=data.dict(exclude_unset=True),
+                organization_id=str(existing.organization_id),
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            pass
     
     return {"message": "Branding updated successfully"}
 
@@ -396,9 +432,9 @@ async def delete_branding(
     if current_user.role not in ['admin_global', 'admin_platform']:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if branding exists
+    # Check if branding exists and get old data
     result = await db.execute(
-        "SELECT id FROM organization_branding WHERE id = :id",
+        "SELECT * FROM organization_branding WHERE id = :id",
         {"id": branding_id}
     )
     existing = result.fetchone()
@@ -406,10 +442,28 @@ async def delete_branding(
     if not existing:
         raise HTTPException(status_code=404, detail="Branding not found")
     
+    # Store old data for audit
+    old_data = {k: v for k, v in existing._mapping.items() if not k.startswith('_')}
+    
     await db.execute(
         "DELETE FROM organization_branding WHERE id = :id",
         {"id": branding_id}
     )
     await db.commit()
+    
+    # Audit logging
+    try:
+        await AuditService.log_crud_operation(
+            db=db,
+            actor_user_id=str(current_user.id),
+            action="delete",
+            entity_type="organization_branding",
+            entity_id=branding_id,
+            old_data=old_data,
+            organization_id=str(existing.organization_id),
+            role=current_user.role,
+        )
+    except Exception as audit_error:
+        pass
     
     return {"message": "Branding deleted successfully"}

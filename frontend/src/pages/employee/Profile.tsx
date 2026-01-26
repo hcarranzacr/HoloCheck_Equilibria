@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +29,6 @@ interface Department {
 }
 
 export default function EmployeeProfile() {
-  const { logPageView, logAction } = useActivityLogger();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [department, setDepartment] = useState<Department | null>(null);
@@ -42,63 +40,61 @@ export default function EmployeeProfile() {
   });
 
   useEffect(() => {
-    logPageView('Employee Profile');
     loadProfile();
   }, []);
 
   async function loadProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      console.log('👤 [Profile] Loading profile...');
 
-      console.log('👤 [Profile] Loading profile for user:', user.id);
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profileError) throw profileError;
-
-      setProfile(profileData);
-      setFormData({
-        full_name: profileData.full_name || '',
-        email: profileData.email || '',
+      // Get current user info
+      const currentUser = await apiClient.auth.me();
+      
+      // Get user profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: currentUser.id }),
+        limit: 1,
       });
 
-      console.log('✅ [Profile] Profile loaded');
+      if (profileResponse.items && profileResponse.items.length > 0) {
+        const profileData = profileResponse.items[0];
+        setProfile(profileData);
+        setFormData({
+          full_name: profileData.full_name || '',
+          email: profileData.email || '',
+        });
+        console.log('✅ [Profile] Profile loaded');
 
-      // Load organization if exists
-      if (profileData.organization_id) {
-        const { data: orgData } = await supabase
-          .from('organizations')
-          .select('id, name')
-          .eq('id', profileData.organization_id)
-          .single();
+        // Load organization if exists
+        if (profileData.organization_id) {
+          try {
+            const orgData = await apiClient.organizations.get(profileData.organization_id);
+            setOrganization(orgData);
+            console.log('✅ [Profile] Organization loaded');
+          } catch (error) {
+            console.log('ℹ️ [Profile] Organization not found');
+          }
+        }
 
-        if (orgData) {
-          setOrganization(orgData);
-          console.log('✅ [Profile] Organization loaded');
+        // Load department if exists
+        if (profileData.department_id) {
+          try {
+            const deptData = await apiClient.departments.get(profileData.department_id);
+            setDepartment(deptData);
+            console.log('✅ [Profile] Department loaded');
+          } catch (error) {
+            console.log('ℹ️ [Profile] Department not found');
+          }
         }
       }
 
-      // Load department if exists
-      if (profileData.department_id) {
-        const { data: deptData } = await supabase
-          .from('departments')
-          .select('id, name')
-          .eq('id', profileData.department_id)
-          .single();
-
-        if (deptData) {
-          setDepartment(deptData);
-          console.log('✅ [Profile] Department loaded');
-        }
-      }
-    } catch (error) {
+      // Log navigation
+      await apiClient.logAudit('VIEW', 'user_profiles', undefined, {
+        page: 'employee/profile',
+      });
+    } catch (error: any) {
       console.error('❌ [Profile] Error loading profile:', error);
-      toast.error('Error al cargar el perfil');
+      toast.error('Error al cargar el perfil: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
@@ -109,26 +105,23 @@ export default function EmployeeProfile() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          full_name: formData.full_name,
-          email: formData.email,
-        })
-        .eq('id', profile.id);
-
-      if (error) throw error;
-
-      await logAction('update', 'user_profiles', profile.id, {
+      await apiClient.userProfiles.update(profile.id, {
         full_name: formData.full_name,
         email: formData.email,
       });
 
       toast.success('Perfil actualizado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('UPDATE', 'user_profiles', profile.id, {
+        full_name: formData.full_name,
+        email: formData.email,
+      });
+
       await loadProfile();
     } catch (error: any) {
       console.error('❌ [Profile] Error saving:', error);
-      toast.error(error.message || 'Error al guardar el perfil');
+      toast.error('Error al guardar el perfil: ' + (error.response?.data?.detail || error.message));
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,5 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { useState, useEffect } from 'react';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import Papa from 'papaparse';
 import {
@@ -32,20 +31,30 @@ import { Plus, Upload, Download, Pencil, Trash2 } from 'lucide-react';
 
 interface UserProfile {
   id: string;
+  user_id: string;
   email: string;
   full_name: string;
   organization_id: string;
   department_id: string | null;
   role: string;
-  status: string;
-  organizations?: { name: string };
-  departments?: { name: string };
+  is_active: boolean;
+}
+
+interface Organization {
+  id: string;
+  name: string;
+}
+
+interface Department {
+  id: string;
+  name: string;
 }
 
 export default function AdminUsers() {
-  console.log('🎯 [Users Page] Component mounted');
-  
-  const queryClient = useQueryClient();
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
@@ -60,124 +69,155 @@ export default function AdminUsers() {
     organization_id: '',
     department_id: '',
     role: 'employee',
-    status: 'active',
   });
 
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ['users', searchTerm, filterOrg, filterRole],
-    queryFn: async () => {
-      let query = supabase
-        .from('user_profiles')
-        .select('*, organizations(name), departments(name)')
-        .order('created_at', { ascending: false });
+  useEffect(() => {
+    loadData();
+  }, [searchTerm, filterOrg, filterRole]);
 
-      if (searchTerm) {
-        query = query.or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
-      }
+  useEffect(() => {
+    if (formData.organization_id) {
+      loadDepartments(formData.organization_id);
+    }
+  }, [formData.organization_id]);
+
+  async function loadData() {
+    try {
+      setLoading(true);
+      
+      // Load users
+      const queryParams: any = {
+        sort: '-created_at',
+        limit: 100,
+      };
+      
       if (filterOrg !== 'all') {
-        query = query.eq('organization_id', filterOrg);
+        queryParams.query = JSON.stringify({ organization_id: filterOrg });
       }
       if (filterRole !== 'all') {
-        query = query.eq('role', filterRole);
+        queryParams.query = JSON.stringify({ 
+          ...(queryParams.query ? JSON.parse(queryParams.query) : {}),
+          role: filterRole 
+        });
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as UserProfile[];
-    },
-  });
+      const usersResponse = await apiClient.userProfiles.listAll(queryParams);
+      let filteredUsers = usersResponse.items || [];
 
-  const { data: organizations = [] } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
+      // Client-side search filter
+      if (searchTerm) {
+        filteredUsers = filteredUsers.filter((user: UserProfile) =>
+          user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          user.email.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      }
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments', formData.organization_id],
-    queryFn: async () => {
-      if (!formData.organization_id) return [];
-      const { data, error } = await supabase
-        .from('departments')
-        .select('id, name')
-        .eq('organization_id', formData.organization_id)
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!formData.organization_id,
-  });
+      setUsers(filteredUsers);
 
-  const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const { error } = await supabase.from('user_profiles').insert([data]);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Load organizations
+      const orgsResponse = await apiClient.organizations.list({ limit: 100 });
+      setOrganizations(orgsResponse.items || []);
+
+      // Log navigation
+      await apiClient.logAudit('VIEW', 'user_profiles', undefined, {
+        page: 'admin/users',
+        action: 'list',
+      });
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      toast.error('Error al cargar datos: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadDepartments(orgId: string) {
+    try {
+      const response = await apiClient.departments.listAll({
+        query: JSON.stringify({ organization_id: orgId }),
+        limit: 100,
+      });
+      setDepartments(response.items || []);
+    } catch (error: any) {
+      console.error('Error loading departments:', error);
+    }
+  }
+
+  async function handleCreate() {
+    try {
+      await apiClient.userProfiles.create({
+        email: formData.email,
+        full_name: formData.full_name,
+        organization_id: formData.organization_id,
+        department_id: formData.department_id || null,
+        role: formData.role,
+      });
+
       toast.success('Usuario creado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('CREATE', 'user_profiles', undefined, {
+        email: formData.email,
+        full_name: formData.full_name,
+      });
+
       setIsCreateOpen(false);
       resetForm();
-    },
-    onError: (error: any) => {
-      toast.error(`Error al crear usuario: ${error.message}`);
-    },
-  });
+      loadData();
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast.error('Error al crear usuario: ' + (error.response?.data?.detail || error.message));
+    }
+  }
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof formData> }) => {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update(data)
-        .eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+  async function handleUpdate() {
+    if (!selectedUser) return;
+
+    try {
+      await apiClient.userProfiles.update(selectedUser.id, {
+        email: formData.email,
+        full_name: formData.full_name,
+        organization_id: formData.organization_id,
+        department_id: formData.department_id || null,
+        role: formData.role,
+      });
+
       toast.success('Usuario actualizado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('UPDATE', 'user_profiles', selectedUser.id, {
+        email: formData.email,
+        full_name: formData.full_name,
+      });
+
       setIsEditOpen(false);
       setSelectedUser(null);
       resetForm();
-    },
-    onError: (error: any) => {
-      toast.error(`Error al actualizar usuario: ${error.message}`);
-    },
-  });
+      loadData();
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      toast.error('Error al actualizar usuario: ' + (error.response?.data?.detail || error.message));
+    }
+  }
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('user_profiles').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`¿Estás seguro de eliminar al usuario "${name}"?`)) return;
+
+    try {
+      await apiClient.userProfiles.delete(id);
       toast.success('Usuario eliminado exitosamente');
-    },
-    onError: (error: any) => {
-      toast.error(`Error al eliminar usuario: ${error.message}`);
-    },
-  });
+      
+      // Log audit
+      await apiClient.logAudit('DELETE', 'user_profiles', id, {
+        full_name: name,
+      });
 
-  const bulkUploadMutation = useMutation({
-    mutationFn: async (users: any[]) => {
-      const { error } = await supabase.from('user_profiles').insert(users);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Usuarios cargados exitosamente');
-      setIsBulkUploadOpen(false);
-    },
-    onError: (error: any) => {
-      toast.error(`Error en carga masiva: ${error.message}`);
-    },
-  });
+      loadData();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error('Error al eliminar usuario: ' + (error.response?.data?.detail || error.message));
+    }
+  }
 
   const resetForm = () => {
     setFormData({
@@ -186,8 +226,8 @@ export default function AdminUsers() {
       organization_id: '',
       department_id: '',
       role: 'employee',
-      status: 'active',
     });
+    setDepartments([]);
   };
 
   const handleEdit = (user: UserProfile) => {
@@ -198,29 +238,32 @@ export default function AdminUsers() {
       organization_id: user.organization_id,
       department_id: user.department_id || '',
       role: user.role,
-      status: user.status,
     });
     setIsEditOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este usuario?')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     Papa.parse(file, {
       header: true,
-      complete: (results) => {
+      complete: async (results) => {
         const validUsers = results.data.filter((row: any) => row.email && row.full_name);
-        if (validUsers.length > 0) {
-          bulkUploadMutation.mutate(validUsers);
-        } else {
+        if (validUsers.length === 0) {
           toast.error('No se encontraron usuarios válidos en el archivo');
+          return;
+        }
+
+        try {
+          for (const userData of validUsers) {
+            await apiClient.userProfiles.create(userData);
+          }
+          toast.success(`${validUsers.length} usuarios cargados exitosamente`);
+          setIsBulkUploadOpen(false);
+          loadData();
+        } catch (error: any) {
+          toast.error('Error en carga masiva: ' + (error.response?.data?.detail || error.message));
         }
       },
       error: (error) => {
@@ -230,8 +273,8 @@ export default function AdminUsers() {
   };
 
   const downloadTemplate = () => {
-    const csv = 'email,full_name,organization_id,department_id,role,status\n' +
-                'usuario@ejemplo.com,Juan Pérez,org-id,dept-id,employee,active';
+    const csv = 'email,full_name,organization_id,department_id,role\n' +
+                'usuario@ejemplo.com,Juan Pérez,org-id,dept-id,employee';
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -262,11 +305,11 @@ export default function AdminUsers() {
               </DialogHeader>
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Sube un archivo CSV con las columnas: email, full_name, organization_id, department_id, role, status
+                  Sube un archivo CSV con las columnas: email, full_name, organization_id, department_id, role
                 </p>
                 <Input
                   type="file"
-                  accept=".csv,.xlsx"
+                  accept=".csv"
                   onChange={handleFileUpload}
                 />
               </div>
@@ -274,7 +317,7 @@ export default function AdminUsers() {
           </Dialog>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button onClick={resetForm}>
                 <Plus className="w-4 h-4 mr-2" />
                 Crear Usuario
               </Button>
@@ -286,25 +329,27 @@ export default function AdminUsers() {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Email</Label>
+                    <Label>Email *</Label>
                     <Input
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="usuario@ejemplo.com"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Nombre Completo</Label>
+                    <Label>Nombre Completo *</Label>
                     <Input
                       value={formData.full_name}
                       onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                       placeholder="Juan Pérez"
+                      required
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Organización</Label>
+                    <Label>Organización *</Label>
                     <Select
                       value={formData.organization_id}
                       onValueChange={(value) => setFormData({ ...formData, organization_id: value, department_id: '' })}
@@ -313,7 +358,7 @@ export default function AdminUsers() {
                         <SelectValue placeholder="Seleccionar organización" />
                       </SelectTrigger>
                       <SelectContent>
-                        {organizations.map((org: any) => (
+                        {organizations.map((org) => (
                           <SelectItem key={org.id} value={org.id}>
                             {org.name}
                           </SelectItem>
@@ -332,7 +377,7 @@ export default function AdminUsers() {
                         <SelectValue placeholder="Seleccionar departamento" />
                       </SelectTrigger>
                       <SelectContent>
-                        {departments.map((dept: any) => (
+                        {departments.map((dept) => (
                           <SelectItem key={dept.id} value={dept.id}>
                             {dept.name}
                           </SelectItem>
@@ -341,43 +386,26 @@ export default function AdminUsers() {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Rol</Label>
-                    <Select
-                      value={formData.role}
-                      onValueChange={(value) => setFormData({ ...formData, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="employee">Empleado</SelectItem>
-                        <SelectItem value="leader">Líder</SelectItem>
-                        <SelectItem value="rrhh">RRHH</SelectItem>
-                        <SelectItem value="admin_org">Admin Org</SelectItem>
-                        <SelectItem value="admin_global">Admin Global</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Estado</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) => setFormData({ ...formData, status: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Activo</SelectItem>
-                        <SelectItem value="inactive">Inactivo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Rol *</Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value) => setFormData({ ...formData, role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">Empleado</SelectItem>
+                      <SelectItem value="leader">Líder</SelectItem>
+                      <SelectItem value="rrhh">RRHH</SelectItem>
+                      <SelectItem value="admin_org">Admin Org</SelectItem>
+                      <SelectItem value="admin_global">Admin Global</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <Button
-                  onClick={() => createMutation.mutate(formData)}
+                  onClick={handleCreate}
                   disabled={!formData.email || !formData.full_name || !formData.organization_id}
                   className="w-full"
                 >
@@ -402,7 +430,7 @@ export default function AdminUsers() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las organizaciones</SelectItem>
-            {organizations.map((org: any) => (
+            {organizations.map((org) => (
               <SelectItem key={org.id} value={org.id}>
                 {org.name}
               </SelectItem>
@@ -430,23 +458,21 @@ export default function AdminUsers() {
             <TableRow>
               <TableHead>Nombre</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Organización</TableHead>
-              <TableHead>Departamento</TableHead>
               <TableHead>Rol</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
                   Cargando...
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
                   No se encontraron usuarios
                 </TableCell>
               </TableRow>
@@ -455,18 +481,16 @@ export default function AdminUsers() {
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.full_name}</TableCell>
                   <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.organizations?.name || '-'}</TableCell>
-                  <TableCell>{user.departments?.name || '-'}</TableCell>
                   <TableCell>{user.role}</TableCell>
                   <TableCell>
                     <span
                       className={`px-2 py-1 rounded text-xs font-medium ${
-                        user.status === 'active'
+                        user.is_active
                           ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}
                     >
-                      {user.status}
+                      {user.is_active ? 'Activo' : 'Inactivo'}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
@@ -481,7 +505,7 @@ export default function AdminUsers() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(user.id)}
+                        onClick={() => handleDelete(user.id, user.full_name)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -527,7 +551,7 @@ export default function AdminUsers() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {organizations.map((org: any) => (
+                    {organizations.map((org) => (
                       <SelectItem key={org.id} value={org.id}>
                         {org.name}
                       </SelectItem>
@@ -545,7 +569,7 @@ export default function AdminUsers() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {departments.map((dept: any) => (
+                    {departments.map((dept) => (
                       <SelectItem key={dept.id} value={dept.id}>
                         {dept.name}
                       </SelectItem>
@@ -554,47 +578,25 @@ export default function AdminUsers() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Rol</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => setFormData({ ...formData, role: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="employee">Empleado</SelectItem>
-                    <SelectItem value="leader">Líder</SelectItem>
-                    <SelectItem value="rrhh">RRHH</SelectItem>
-                    <SelectItem value="admin_org">Admin Org</SelectItem>
-                    <SelectItem value="admin_global">Admin Global</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Estado</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Activo</SelectItem>
-                    <SelectItem value="inactive">Inactivo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label>Rol</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) => setFormData({ ...formData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Empleado</SelectItem>
+                  <SelectItem value="leader">Líder</SelectItem>
+                  <SelectItem value="rrhh">RRHH</SelectItem>
+                  <SelectItem value="admin_org">Admin Org</SelectItem>
+                  <SelectItem value="admin_global">Admin Global</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Button
-              onClick={() =>
-                selectedUser && updateMutation.mutate({ id: selectedUser.id, data: formData })
-              }
-              className="w-full"
-            >
+            <Button onClick={handleUpdate} className="w-full">
               Actualizar Usuario
             </Button>
           </div>

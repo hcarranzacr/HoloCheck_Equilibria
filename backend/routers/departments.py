@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from services.departments import DepartmentsService
+from services.audit_service import AuditService
+from dependencies.auth import get_current_user
+from schemas.auth import UserResponse
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -22,7 +25,6 @@ class DepartmentsData(BaseModel):
     """Entity data schema (for create/update)"""
     organization_id: str
     name: str
-    leader_id: str = None
     created_at: Optional[datetime] = None
 
 
@@ -30,7 +32,6 @@ class DepartmentsUpdateData(BaseModel):
     """Update entity data (partial updates allowed)"""
     organization_id: Optional[str] = None
     name: Optional[str] = None
-    leader_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -39,7 +40,6 @@ class DepartmentsResponse(BaseModel):
     id: str
     organization_id: str
     name: str
-    leader_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -177,6 +177,7 @@ async def get_departments(
 @router.post("", response_model=DepartmentsResponse, status_code=201)
 async def create_departments(
     data: DepartmentsData,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new departments"""
@@ -187,6 +188,22 @@ async def create_departments(
         result = await service.create(data.model_dump())
         if not result:
             raise HTTPException(status_code=400, detail="Failed to create departments")
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="create",
+                entity_type="departments",
+                entity_id=str(result.id),
+                new_data=data.model_dump(),
+                organization_id=str(result.organization_id),
+                department_id=str(result.id),
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Departments created successfully with id: {result.id}")
         return result
@@ -201,6 +218,7 @@ async def create_departments(
 @router.post("/batch", response_model=List[DepartmentsResponse], status_code=201)
 async def create_departmentss_batch(
     request: DepartmentsBatchCreateRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create multiple departmentss in a single request"""
@@ -214,6 +232,22 @@ async def create_departmentss_batch(
             result = await service.create(item_data.model_dump())
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="create",
+                        entity_type="departments",
+                        entity_id=str(result.id),
+                        new_data=item_data.model_dump(),
+                        organization_id=str(result.organization_id),
+                        department_id=str(result.id),
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch created {len(results)} departmentss successfully")
         return results
@@ -226,6 +260,7 @@ async def create_departmentss_batch(
 @router.put("/batch", response_model=List[DepartmentsResponse])
 async def update_departmentss_batch(
     request: DepartmentsBatchUpdateRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update multiple departmentss in a single request"""
@@ -236,11 +271,32 @@ async def update_departmentss_batch(
     
     try:
         for item in request.items:
+            # Get old data before update
+            old_entity = await service.get_by_id(item.id)
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             # Only include non-None values for partial updates
             update_dict = {k: v for k, v in item.updates.model_dump().items() if v is not None}
             result = await service.update(item.id, update_dict)
             if result:
                 results.append(result)
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="update",
+                        entity_type="departments",
+                        entity_id=str(item.id),
+                        old_data=old_data,
+                        new_data=update_dict,
+                        organization_id=str(result.organization_id),
+                        department_id=str(result.id),
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch updated {len(results)} departmentss successfully")
         return results
@@ -254,6 +310,7 @@ async def update_departmentss_batch(
 async def update_departments(
     id: int,
     data: DepartmentsUpdateData,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an existing departments"""
@@ -261,12 +318,34 @@ async def update_departments(
 
     service = DepartmentsService(db)
     try:
+        # Get old data before update
+        old_entity = await service.get_by_id(id)
+        if not old_entity:
+            logger.warning(f"Departments with id {id} not found for update")
+            raise HTTPException(status_code=404, detail="Departments not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
         # Only include non-None values for partial updates
         update_dict = {k: v for k, v in data.model_dump().items() if v is not None}
         result = await service.update(id, update_dict)
-        if not result:
-            logger.warning(f"Departments with id {id} not found for update")
-            raise HTTPException(status_code=404, detail="Departments not found")
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="update",
+                entity_type="departments",
+                entity_id=str(id),
+                old_data=old_data,
+                new_data=update_dict,
+                organization_id=str(result.organization_id),
+                department_id=str(result.id),
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Departments {id} updated successfully")
         return result
@@ -283,6 +362,7 @@ async def update_departments(
 @router.delete("/batch")
 async def delete_departmentss_batch(
     request: DepartmentsBatchDeleteRequest,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete multiple departmentss by their IDs"""
@@ -293,9 +373,29 @@ async def delete_departmentss_batch(
     
     try:
         for item_id in request.ids:
+            # Get old data before delete
+            old_entity = await service.get_by_id(item_id)
+            old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')} if old_entity else None
+            
             success = await service.delete(item_id)
             if success:
                 deleted_count += 1
+                
+                # Audit logging
+                try:
+                    await AuditService.log_crud_operation(
+                        db=db,
+                        actor_user_id=str(current_user.id),
+                        action="delete",
+                        entity_type="departments",
+                        entity_id=str(item_id),
+                        old_data=old_data,
+                        organization_id=str(old_entity.organization_id) if old_entity else None,
+                        department_id=str(old_entity.id) if old_entity else None,
+                        role=current_user.role,
+                    )
+                except Exception as audit_error:
+                    logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Batch deleted {deleted_count} departmentss successfully")
         return {"message": f"Successfully deleted {deleted_count} departmentss", "deleted_count": deleted_count}
@@ -308,6 +408,7 @@ async def delete_departmentss_batch(
 @router.delete("/{id}")
 async def delete_departments(
     id: int,
+    current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a single departments by ID"""
@@ -315,10 +416,31 @@ async def delete_departments(
     
     service = DepartmentsService(db)
     try:
-        success = await service.delete(id)
-        if not success:
+        # Get old data before delete
+        old_entity = await service.get_by_id(id)
+        if not old_entity:
             logger.warning(f"Departments with id {id} not found for deletion")
             raise HTTPException(status_code=404, detail="Departments not found")
+        
+        old_data = {k: v for k, v in old_entity.__dict__.items() if not k.startswith('_')}
+        
+        success = await service.delete(id)
+        
+        # Audit logging
+        try:
+            await AuditService.log_crud_operation(
+                db=db,
+                actor_user_id=str(current_user.id),
+                action="delete",
+                entity_type="departments",
+                entity_id=str(id),
+                old_data=old_data,
+                organization_id=str(old_entity.organization_id),
+                department_id=str(old_entity.id),
+                role=current_user.role,
+            )
+        except Exception as audit_error:
+            logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Departments {id} deleted successfully")
         return {"message": "Departments deleted successfully", "id": id}

@@ -35,6 +35,7 @@ import HRAIAnalyses from './pages/hr/ai-analyses';
 import HRInsights from './pages/hr/insights';
 import HRMeasurements from './pages/hr/measurements';
 import HRUsage from './pages/hr/usage';
+import HRAtRisk from './pages/hr/at-risk';
 
 // Org Admin pages
 import OrgDashboard from './pages/org/dashboard';
@@ -44,6 +45,7 @@ import OrgDepartmentInsights from './pages/org/department-insights';
 import OrgMeasurements from './pages/org/measurements';
 import OrgAIAnalyses from './pages/org/ai-analyses';
 import OrgPrompts from './pages/org/prompts';
+import OrgInsights from './pages/org/insights';
 
 // Admin pages
 import Organizations from './pages/admin/organizations';
@@ -58,14 +60,19 @@ import Settings from './pages/admin/settings';
 import SubscriptionPlans from './pages/admin/subscription-plans';
 import SystemLogs from './pages/admin/system-logs';
 import UsageLogs from './pages/admin/usage-logs';
+import AdminCreditUsage from './pages/admin/credit-usage';
+import AdminPrompts from './pages/admin/prompts';
+import AdminPartnerships from './pages/admin/partnerships';
 
 const queryClient = new QueryClient();
 
 const App = () => {
   console.log('🚀 [App] HoloCheck Equilibria - ALL ROUTES REGISTERED');
-  console.log('📋 [App] Employee routes: /employee/dashboard, /employee/pre-scan, /employee/scan');
-  console.log('📋 [App] Org routes: /org/dashboard, /org/users, /org/departments, /org/department-insights, /org/measurements, /org/ai-analyses, /org/prompts');
-  console.log('📋 [App] Admin routes: /admin/organizations, /admin/prompts (global-prompts)');
+  console.log('📋 [App] Employee routes: /employee/dashboard, /employee/recommendations, /employee/scan');
+  console.log('📋 [App] Leader routes: /leader/dashboard, /leader/team, /leader/insights');
+  console.log('📋 [App] HR routes: /hr/dashboard, /hr/insights, /hr/measurements');
+  console.log('📋 [App] Org routes: /org/dashboard, /org/insights, /org/users');
+  console.log('📋 [App] Admin routes: /admin/organizations, /admin/partnerships');
   
   return (
     <QueryClientProvider client={queryClient}>
@@ -108,6 +115,7 @@ const App = () => {
                   <Route path="/hr/insights" element={<HRInsights />} />
                   <Route path="/hr/measurements" element={<HRMeasurements />} />
                   <Route path="/hr/usage" element={<HRUsage />} />
+                  <Route path="/hr/at-risk" element={<HRAtRisk />} />
                   
                   {/* Organization Admin routes */}
                   <Route path="/org/dashboard" element={<OrgDashboard />} />
@@ -117,6 +125,7 @@ const App = () => {
                   <Route path="/org/measurements" element={<OrgMeasurements />} />
                   <Route path="/org/ai-analyses" element={<OrgAIAnalyses />} />
                   <Route path="/org/prompts" element={<OrgPrompts />} />
+                  <Route path="/org/insights" element={<OrgInsights />} />
                   
                   {/* Platform Admin routes */}
                   <Route path="/admin/organizations" element={<Organizations />} />
@@ -125,13 +134,15 @@ const App = () => {
                   <Route path="/admin/departments" element={<DepartmentsPage />} />
                   <Route path="/admin/invite-user" element={<InviteUser />} />
                   <Route path="/admin/ai-analyses" element={<AIAnalyses />} />
-                  <Route path="/admin/global-prompts" element={<GlobalPrompts />} />
                   <Route path="/admin/prompts" element={<GlobalPrompts />} />
                   <Route path="/admin/sectors-industries" element={<SectorsIndustries />} />
                   <Route path="/admin/settings" element={<Settings />} />
                   <Route path="/admin/subscription-plans" element={<SubscriptionPlans />} />
                   <Route path="/admin/system-logs" element={<SystemLogs />} />
                   <Route path="/admin/usage-logs" element={<UsageLogs />} />
+                  <Route path="/admin/credit-usage" element={<AdminCreditUsage />} />
+                  <Route path="/admin/prompts-management" element={<AdminPrompts />} />
+                  <Route path="/admin/partnerships" element={<AdminPartnerships />} />
                 </Route>
               </Route>
               

@@ -1,302 +1,281 @@
 import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Activity, TrendingUp, Calendar, Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useActivityLogger } from '@/hooks/useActivityLogger';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Activity, Heart, Brain, Battery, TrendingUp, Calendar } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
+import BiometricGauge from '@/components/dashboard/BiometricGauge';
+import SectionHeader from '@/components/dashboard/SectionHeader';
+import LoyaltyBenefitsIndicator from '@/components/dashboard/LoyaltyBenefitsIndicator';
+import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
+import { ALL_BIOMETRIC_INDICATORS, CATEGORY_LABELS } from '@/lib/all-biometric-indicators';
 
-interface Measurement {
-  id: string;
-  heart_rate?: number;
-  sdnn?: number;
-  rmssd?: number;
-  ai_stress?: number;
-  ai_fatigue?: number;
-  ai_cognitive_load?: number;
-  ai_recovery?: number;
-  bio_age_basic?: number;
-  created_at: string;
-}
-
-interface AIAnalysis {
-  insight_json: any;
+interface DashboardData {
+  user_profile: {
+    full_name: string;
+    email: string;
+    department_name?: string;
+  };
+  latest_scan: any;
+  scan_history: any[];
+  total_scans: number;
+  trends: {
+    avg_stress: number;
+    avg_fatigue: number;
+    avg_recovery: number;
+  };
 }
 
 export default function EmployeeDashboard() {
-  const { logPageView, logAction } = useActivityLogger();
-  const [latestMeasurement, setLatestMeasurement] = useState<Measurement | null>(null);
-  const [aiAnalysis, setAIAnalysis] = useState<AIAnalysis | null>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    logPageView('Employee Dashboard');
     loadDashboardData();
   }, []);
 
   async function loadDashboardData() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      setLoading(true);
+      console.log('📊 [Employee Dashboard] Loading data...');
 
-      console.log('📊 [Dashboard] Loading data for user:', user.id);
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('User not authenticated:', userError);
+        return;
+      }
 
-      // Get latest measurement
-      const { data: measurements, error: measError } = await supabase
+      // Get user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('full_name, email, departments(name)')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error loading profile:', profileError);
+        return;
+      }
+
+      // Get latest scan
+      const { data: scans, error: scansError } = await supabase
         .from('biometric_measurements')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(10);
 
-      if (measError) {
-        console.error('❌ [Dashboard] Error loading measurements:', measError);
-        throw measError;
+      if (scansError) {
+        console.error('Error loading scans:', scansError);
+        return;
       }
 
-      if (measurements && measurements.length > 0) {
-        setLatestMeasurement(measurements[0]);
-        console.log('✅ [Dashboard] Latest measurement loaded');
+      const latestScan = scans?.[0] || null;
 
-        // Get AI analysis for latest measurement
-        const { data: analysis, error: analysisError } = await supabase
-          .from('ai_analysis_results')
-          .select('*')
-          .eq('measurement_id', measurements[0].id)
-          .single();
+      // Calculate trends
+      const avgStress = scans?.length > 0
+        ? scans.reduce((acc, s) => acc + (s.ai_stress || 0), 0) / scans.length
+        : 0;
+      const avgFatigue = scans?.length > 0
+        ? scans.reduce((acc, s) => acc + (s.ai_fatigue || 0), 0) / scans.length
+        : 0;
+      const avgRecovery = scans?.length > 0
+        ? scans.reduce((acc, s) => acc + (s.ai_recovery || 0), 0) / scans.length
+        : 0;
 
-        if (!analysisError && analysis) {
-          setAIAnalysis(analysis);
-          console.log('✅ [Dashboard] AI analysis loaded');
-        }
-      } else {
-        console.log('ℹ️ [Dashboard] No measurements found');
-      }
+      const dashboardData: DashboardData = {
+        user_profile: {
+          full_name: profile.full_name,
+          email: profile.email,
+          department_name: profile.departments?.name,
+        },
+        latest_scan: latestScan,
+        scan_history: scans || [],
+        total_scans: scans?.length || 0,
+        trends: {
+          avg_stress: avgStress,
+          avg_fatigue: avgFatigue,
+          avg_recovery: avgRecovery,
+        },
+      };
+
+      console.log('✅ [Employee Dashboard] Data loaded:', dashboardData);
+      setData(dashboardData);
     } catch (error) {
-      console.error('❌ [Dashboard] Error:', error);
+      console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  const getStatusColor = (value: number | undefined, thresholds: { good: number; warning: number }) => {
-    if (!value) return 'text-gray-400';
-    if (value <= thresholds.good) return 'text-green-600';
-    if (value <= thresholds.warning) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600">Cargando tu dashboard...</p>
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
+      </div>
+    );
+  }
+
+  if (!data || !data.latest_scan) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-5">
+        <div className="max-w-7xl mx-auto">
+          <Card className="bg-white rounded-2xl p-12 text-center">
+            <Activity className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              No hay escaneos disponibles
+            </h3>
+            <p className="text-gray-500">
+              Realiza tu primer escaneo para ver tus indicadores de salud
+            </p>
+          </Card>
         </div>
       </div>
     );
   }
 
+  const latestScan = data.latest_scan;
+  const wellnessColor = getWellnessColor(latestScan.wellness_index_score);
+  const wellnessStatus = getWellnessStatusString(latestScan.wellness_index_score);
+
+  // Group indicators by category and filter only those with values
+  const indicatorsByCategory: Record<string, typeof ALL_BIOMETRIC_INDICATORS> = {};
+  
+  ALL_BIOMETRIC_INDICATORS.forEach(indicator => {
+    const value = latestScan[indicator.key];
+    // Only include if value exists and is not null/undefined
+    if (value !== null && value !== undefined && value !== '') {
+      if (!indicatorsByCategory[indicator.category]) {
+        indicatorsByCategory[indicator.category] = [];
+      }
+      indicatorsByCategory[indicator.category].push(indicator);
+    }
+  });
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Mi Dashboard de Bienestar</h1>
-          <p className="text-muted-foreground">Resumen de tu estado de salud</p>
-        </div>
-        <Link to="/employee/pre-scan">
-          <Button size="lg">
-            <Activity className="mr-2 h-5 w-5" />
-            Nueva Medición
-          </Button>
-        </Link>
+    <div className="min-h-screen bg-gray-50 p-5">
+      {/* Loyalty Benefits Indicator */}
+      <LoyaltyBenefitsIndicator />
+
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-6">
+        <Card className="bg-gradient-to-r from-sky-600 to-blue-600 text-white rounded-2xl shadow-xl p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">
+                👋 ¡Hola, {data.user_profile.full_name}!
+              </h1>
+              <p className="text-sky-100">
+                {data.user_profile.department_name || 'Empleado'} • {data.total_scans} escaneos realizados
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-5xl font-bold">{latestScan.wellness_index_score?.toFixed(1) || 'N/A'}</div>
+              <div className="text-sm text-sky-100">Índice de Bienestar</div>
+              <Badge 
+                className="mt-2"
+                style={{ 
+                  backgroundColor: wellnessColor,
+                  color: 'white'
+                }}
+              >
+                {wellnessStatus}
+              </Badge>
+            </div>
+          </div>
+        </Card>
       </div>
 
-      {!latestMeasurement ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Activity className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No hay mediciones aún</h3>
-            <p className="text-muted-foreground mb-6">
-              Realiza tu primera medición biométrica para comenzar a monitorear tu bienestar
-            </p>
-            <Link to="/employee/pre-scan">
-              <Button>
-                <Activity className="mr-2 h-4 w-4" />
-                Realizar Primera Medición
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Nivel de Estrés</CardTitle>
-                <Brain className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getStatusColor(latestMeasurement.ai_stress, { good: 30, warning: 60 })}`}>
-                  {latestMeasurement.ai_stress ? `${latestMeasurement.ai_stress}%` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {latestMeasurement.ai_stress && latestMeasurement.ai_stress <= 30 ? 'Bajo' :
-                   latestMeasurement.ai_stress && latestMeasurement.ai_stress <= 60 ? 'Moderado' : 'Alto'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Nivel de Fatiga</CardTitle>
-                <Battery className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getStatusColor(latestMeasurement.ai_fatigue, { good: 30, warning: 60 })}`}>
-                  {latestMeasurement.ai_fatigue ? `${latestMeasurement.ai_fatigue}%` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {latestMeasurement.ai_fatigue && latestMeasurement.ai_fatigue <= 30 ? 'Bajo' :
-                   latestMeasurement.ai_fatigue && latestMeasurement.ai_fatigue <= 60 ? 'Moderado' : 'Alto'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Frecuencia Cardíaca</CardTitle>
-                <Heart className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {latestMeasurement.heart_rate ? `${latestMeasurement.heart_rate}` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">bpm</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Edad Biológica</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {latestMeasurement.bio_age_basic ? `${latestMeasurement.bio_age_basic}` : 'N/A'}
-                </div>
-                <p className="text-xs text-muted-foreground">años</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Última Medición</CardTitle>
-              <CardDescription>
-                <Calendar className="inline h-4 w-4 mr-1" />
-                {formatDate(latestMeasurement.created_at)}
-              </CardDescription>
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-white rounded-xl shadow-md">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
+                <Heart className="w-4 h-4" />
+                Último Escaneo
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <h4 className="font-semibold mb-2">Variabilidad Cardíaca</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">SDNN:</span>
-                      <span className="font-medium">{latestMeasurement.sdnn || 'N/A'} ms</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">RMSSD:</span>
-                      <span className="font-medium">{latestMeasurement.rmssd || 'N/A'} ms</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">Indicadores AI</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Carga Cognitiva:</span>
-                      <span className="font-medium">{latestMeasurement.ai_cognitive_load || 'N/A'}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Recuperación:</span>
-                      <span className="font-medium">{latestMeasurement.ai_recovery || 'N/A'}%</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="text-2xl font-bold text-gray-900">
+                {new Date(latestScan.created_at).toLocaleDateString('es-ES')}
               </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {new Date(latestScan.created_at).toLocaleTimeString('es-ES')}
+              </p>
             </CardContent>
           </Card>
 
-          {aiAnalysis && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Análisis AI</CardTitle>
-                <CardDescription>Recomendaciones personalizadas basadas en tu última medición</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="prose max-w-none">
-                  {aiAnalysis.insight_json?.recommendations ? (
-                    <ul className="list-disc pl-5 space-y-2">
-                      {aiAnalysis.insight_json.recommendations.map((rec: string, idx: number) => (
-                        <li key={idx} className="text-sm">{rec}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Análisis en proceso...
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Card className="bg-white rounded-xl shadow-md">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Tendencia Estrés
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {data.trends.avg_stress.toFixed(1)}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Promedio últimos 10 escaneos</p>
+            </CardContent>
+          </Card>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <Link to="/employee/history">
-              <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
-                <CardContent className="pt-6">
-                  <Activity className="h-8 w-8 text-sky-600 mb-2" />
-                  <h3 className="font-semibold">Mis Mediciones</h3>
-                  <p className="text-sm text-muted-foreground">Ver historial completo</p>
-                </CardContent>
-              </Card>
-            </Link>
+          <Card className="bg-white rounded-xl shadow-md">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Total Escaneos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {data.total_scans}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Desde el inicio</p>
+            </CardContent>
+          </Card>
+        </div>
 
-            <Link to="/employee/history">
-              <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
-                <CardContent className="pt-6">
-                  <TrendingUp className="h-8 w-8 text-sky-600 mb-2" />
-                  <h3 className="font-semibold">Tendencias</h3>
-                  <p className="text-sm text-muted-foreground">Analizar evolución</p>
-                </CardContent>
-              </Card>
-            </Link>
+        {/* All Biometric Indicators by Category */}
+        {Object.entries(indicatorsByCategory).map(([category, indicators]) => (
+          <div key={category}>
+            <SectionHeader
+              title={CATEGORY_LABELS[category] || category}
+              description={`${indicators.length} indicadores disponibles`}
+              metricCount={indicators.length}
+            />
 
-            <Link to="/employee/recommendations">
-              <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
-                <CardContent className="pt-6">
-                  <Brain className="h-8 w-8 text-sky-600 mb-2" />
-                  <h3 className="font-semibold">Recomendaciones</h3>
-                  <p className="text-sm text-muted-foreground">Consejos personalizados</p>
-                </CardContent>
-              </Card>
-            </Link>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {indicators.map(indicator => {
+                const value = latestScan[indicator.key];
+                
+                if (indicator.hasInfo) {
+                  return (
+                    <BiometricGaugeWithInfo
+                      key={indicator.key}
+                      value={value}
+                      indicatorCode={indicator.indicatorCode}
+                      label={indicator.label}
+                    />
+                  );
+                } else {
+                  return (
+                    <BiometricGauge
+                      key={indicator.key}
+                      value={value}
+                      label={indicator.label}
+                      unit=""
+                      min={0}
+                      max={100}
+                    />
+                  );
+                }
+              })}
+            </div>
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

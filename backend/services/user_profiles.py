@@ -1,172 +1,78 @@
-import logging
-from typing import Optional, Dict, Any, List
+from datetime import datetime
+from typing import List, Optional
+from uuid import UUID
 
-from sqlalchemy import select, func
+from models.user_profiles import UserProfile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.user_profiles import User_profiles
 
-logger = logging.getLogger(__name__)
-
-
-# ------------------ Service Layer ------------------
-class User_profilesService:
-    """Service layer for User_profiles operations"""
-
+class UserProfileService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, data: Dict[str, Any], user_id: Optional[str] = None) -> Optional[User_profiles]:
-        """Create a new user_profiles"""
-        try:
-            if user_id:
-                data['user_id'] = user_id
-            obj = User_profiles(**data)
-            self.db.add(obj)
-            await self.db.commit()
-            await self.db.refresh(obj)
-            logger.info(f"Created user_profiles with id: {obj.id}")
-            return obj
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error creating user_profiles: {str(e)}")
-            raise
+    async def get_user_profile(self, user_id: UUID) -> Optional[UserProfile]:
+        """Get a user profile by ID"""
+        result = await self.db.execute(select(UserProfile).where(UserProfile.id == user_id))
+        return result.scalar_one_or_none()
 
-    async def check_ownership(self, obj_id: int, user_id: str) -> bool:
-        """Check if user owns this record"""
-        try:
-            obj = await self.get_by_id(obj_id, user_id=user_id)
-            return obj is not None
-        except Exception as e:
-            logger.error(f"Error checking ownership for user_profiles {obj_id}: {str(e)}")
+    async def get_user_profile_by_email(self, email: str) -> Optional[UserProfile]:
+        """Get a user profile by email"""
+        result = await self.db.execute(select(UserProfile).where(UserProfile.email == email))
+        return result.scalar_one_or_none()
+
+    async def list_user_profiles(
+        self,
+        organization_id: Optional[UUID] = None,
+        department_id: Optional[UUID] = None,
+        role: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[UserProfile]:
+        """List user profiles with optional filters"""
+        query = select(UserProfile)
+
+        if organization_id:
+            query = query.where(UserProfile.organization_id == organization_id)
+        if department_id:
+            query = query.where(UserProfile.department_id == department_id)
+        if role:
+            query = query.where(UserProfile.role == role)
+
+        query = query.offset(skip).limit(limit).order_by(UserProfile.created_at.desc())
+
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
+    async def create_user_profile(self, profile_data: dict) -> UserProfile:
+        """Create a new user profile"""
+        profile = UserProfile(**profile_data)
+        profile.created_at = datetime.utcnow()
+        self.db.add(profile)
+        await self.db.commit()
+        await self.db.refresh(profile)
+        return profile
+
+    async def update_user_profile(self, user_id: UUID, profile_data: dict) -> Optional[UserProfile]:
+        """Update a user profile"""
+        profile = await self.get_user_profile(user_id)
+        if not profile:
+            return None
+
+        for key, value in profile_data.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+
+        await self.db.commit()
+        await self.db.refresh(profile)
+        return profile
+
+    async def delete_user_profile(self, user_id: UUID) -> bool:
+        """Delete a user profile"""
+        profile = await self.get_user_profile(user_id)
+        if not profile:
             return False
 
-    async def get_by_id(self, obj_id: int, user_id: Optional[str] = None) -> Optional[User_profiles]:
-        """Get user_profiles by ID (user can only see their own records)"""
-        try:
-            query = select(User_profiles).where(User_profiles.id == obj_id)
-            if user_id:
-                query = query.where(User_profiles.user_id == user_id)
-            result = await self.db.execute(query)
-            return result.scalar_one_or_none()
-        except Exception as e:
-            logger.error(f"Error fetching user_profiles {obj_id}: {str(e)}")
-            raise
-
-    async def get_list(
-        self, 
-        skip: int = 0, 
-        limit: int = 20, 
-        user_id: Optional[str] = None,
-        query_dict: Optional[Dict[str, Any]] = None,
-        sort: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get paginated list of user_profiless (user can only see their own records)"""
-        try:
-            query = select(User_profiles)
-            count_query = select(func.count(User_profiles.id))
-            
-            if user_id:
-                query = query.where(User_profiles.user_id == user_id)
-                count_query = count_query.where(User_profiles.user_id == user_id)
-            
-            if query_dict:
-                for field, value in query_dict.items():
-                    if hasattr(User_profiles, field):
-                        query = query.where(getattr(User_profiles, field) == value)
-                        count_query = count_query.where(getattr(User_profiles, field) == value)
-            
-            count_result = await self.db.execute(count_query)
-            total = count_result.scalar()
-
-            if sort:
-                if sort.startswith('-'):
-                    field_name = sort[1:]
-                    if hasattr(User_profiles, field_name):
-                        query = query.order_by(getattr(User_profiles, field_name).desc())
-                else:
-                    if hasattr(User_profiles, sort):
-                        query = query.order_by(getattr(User_profiles, sort))
-            else:
-                query = query.order_by(User_profiles.id.desc())
-
-            result = await self.db.execute(query.offset(skip).limit(limit))
-            items = result.scalars().all()
-
-            return {
-                "items": items,
-                "total": total,
-                "skip": skip,
-                "limit": limit,
-            }
-        except Exception as e:
-            logger.error(f"Error fetching user_profiles list: {str(e)}")
-            raise
-
-    async def update(self, obj_id: int, update_data: Dict[str, Any], user_id: Optional[str] = None) -> Optional[User_profiles]:
-        """Update user_profiles (requires ownership)"""
-        try:
-            obj = await self.get_by_id(obj_id, user_id=user_id)
-            if not obj:
-                logger.warning(f"User_profiles {obj_id} not found for update")
-                return None
-            for key, value in update_data.items():
-                if hasattr(obj, key) and key != 'user_id':
-                    setattr(obj, key, value)
-
-            await self.db.commit()
-            await self.db.refresh(obj)
-            logger.info(f"Updated user_profiles {obj_id}")
-            return obj
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error updating user_profiles {obj_id}: {str(e)}")
-            raise
-
-    async def delete(self, obj_id: int, user_id: Optional[str] = None) -> bool:
-        """Delete user_profiles (requires ownership)"""
-        try:
-            obj = await self.get_by_id(obj_id, user_id=user_id)
-            if not obj:
-                logger.warning(f"User_profiles {obj_id} not found for deletion")
-                return False
-            await self.db.delete(obj)
-            await self.db.commit()
-            logger.info(f"Deleted user_profiles {obj_id}")
-            return True
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error deleting user_profiles {obj_id}: {str(e)}")
-            raise
-
-    async def get_by_field(self, field_name: str, field_value: Any) -> Optional[User_profiles]:
-        """Get user_profiles by any field"""
-        try:
-            if not hasattr(User_profiles, field_name):
-                raise ValueError(f"Field {field_name} does not exist on User_profiles")
-            result = await self.db.execute(
-                select(User_profiles).where(getattr(User_profiles, field_name) == field_value)
-            )
-            return result.scalar_one_or_none()
-        except Exception as e:
-            logger.error(f"Error fetching user_profiles by {field_name}: {str(e)}")
-            raise
-
-    async def list_by_field(
-        self, field_name: str, field_value: Any, skip: int = 0, limit: int = 20
-    ) -> List[User_profiles]:
-        """Get list of user_profiless filtered by field"""
-        try:
-            if not hasattr(User_profiles, field_name):
-                raise ValueError(f"Field {field_name} does not exist on User_profiles")
-            result = await self.db.execute(
-                select(User_profiles)
-                .where(getattr(User_profiles, field_name) == field_value)
-                .offset(skip)
-                .limit(limit)
-                .order_by(User_profiles.id.desc())
-            )
-            return result.scalars().all()
-        except Exception as e:
-            logger.error(f"Error fetching user_profiless by {field_name}: {str(e)}")
-            raise
+        await self.db.delete(profile)
+        await self.db.commit()
+        return True
