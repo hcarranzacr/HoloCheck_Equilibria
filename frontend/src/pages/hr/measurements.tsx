@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, TrendingUp } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import SectionHeader from '@/components/dashboard/SectionHeader';
 import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
 import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
+import { apiClient } from '@/lib/api-client';
 
 interface OrgMeasurement {
   id: string;
@@ -31,6 +32,7 @@ interface OrgMeasurement {
 export default function HRMeasurements() {
   const [measurements, setMeasurements] = useState<OrgMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ranges, setRanges] = useState<Record<string, Record<string, [number, number]>>>({});
 
   useEffect(() => {
     loadMeasurements();
@@ -39,6 +41,11 @@ export default function HRMeasurements() {
   async function loadMeasurements() {
     try {
       setLoading(true);
+
+      // Fetch biometric indicator ranges
+      const rangesData = await apiClient.getBiometricIndicatorRanges();
+      setRanges(rangesData);
+      console.log('✅ [HR Measurements] Ranges loaded:', rangesData);
 
       // Get current user's organization
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -173,48 +180,56 @@ export default function HRMeasurements() {
               value={avgWellness}
               indicatorCode="global_health_score"
               label="Bienestar Promedio"
+              riskRanges={ranges['global_health_score']}
             />
 
             <BiometricGaugeWithInfo
               value={avgStress}
               indicatorCode="mental_stress_index"
               label="Estrés Promedio"
+              riskRanges={ranges['mental_stress_index']}
             />
 
             <BiometricGaugeWithInfo
               value={avgFatigue}
               indicatorCode="mental_score"
               label="Fatiga Promedio"
+              riskRanges={ranges['mental_score']}
             />
 
             <BiometricGaugeWithInfo
               value={avgCognitiveLoad}
               indicatorCode="mental_score"
               label="Carga Cognitiva"
+              riskRanges={ranges['mental_score']}
             />
 
             <BiometricGaugeWithInfo
               value={avgRecovery}
               indicatorCode="physical_score"
               label="Recuperación"
+              riskRanges={ranges['physical_score']}
             />
 
             <BiometricGaugeWithInfo
               value={avgHeartRate}
               indicatorCode="heart_rate"
               label="Frecuencia Cardíaca"
+              riskRanges={ranges['heart_rate']}
             />
 
             <BiometricGaugeWithInfo
               value={avgMentalScore}
               indicatorCode="mental_score"
               label="Salud Mental"
+              riskRanges={ranges['mental_score']}
             />
 
             <BiometricGaugeWithInfo
               value={avgPhysiologicalScore}
               indicatorCode="physiological_score"
               label="Score Fisiológico"
+              riskRanges={ranges['physiological_score']}
             />
           </div>
         </div>

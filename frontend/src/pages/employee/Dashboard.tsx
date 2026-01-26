@@ -9,6 +9,7 @@ import SectionHeader from '@/components/dashboard/SectionHeader';
 import LoyaltyBenefitsIndicator from '@/components/dashboard/LoyaltyBenefitsIndicator';
 import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
 import { ALL_BIOMETRIC_INDICATORS, CATEGORY_LABELS } from '@/lib/all-biometric-indicators';
+import { apiClient } from '@/lib/api-client';
 
 interface DashboardData {
   user_profile: {
@@ -29,6 +30,7 @@ interface DashboardData {
 export default function EmployeeDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ranges, setRanges] = useState<Record<string, Record<string, [number, number]>>>({});
 
   useEffect(() => {
     loadDashboardData();
@@ -38,6 +40,11 @@ export default function EmployeeDashboard() {
     try {
       setLoading(true);
       console.log('📊 [Employee Dashboard] Loading data...');
+
+      // Fetch biometric indicator ranges
+      const rangesData = await apiClient.getBiometricIndicatorRanges();
+      setRanges(rangesData);
+      console.log('✅ [Employee Dashboard] Ranges loaded:', rangesData);
 
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
@@ -249,6 +256,7 @@ export default function EmployeeDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {indicators.map(indicator => {
                 const value = latestScan[indicator.key];
+                const indicatorRanges = ranges[indicator.indicatorCode];
                 
                 if (indicator.hasInfo) {
                   return (
@@ -257,6 +265,7 @@ export default function EmployeeDashboard() {
                       value={value}
                       indicatorCode={indicator.indicatorCode}
                       label={indicator.label}
+                      riskRanges={indicatorRanges}
                     />
                   );
                 } else {
@@ -268,6 +277,8 @@ export default function EmployeeDashboard() {
                       unit=""
                       min={0}
                       max={100}
+                      riskRanges={indicatorRanges}
+                      indicatorCode={indicator.key}
                     />
                   );
                 }

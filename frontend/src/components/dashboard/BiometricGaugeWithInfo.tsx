@@ -44,6 +44,7 @@ interface BiometricGaugeWithInfoProps {
   indicatorCode: string;
   label?: string;
   className?: string;
+  riskRanges?: Record<string, [number, number]> | null;
 }
 
 export default function BiometricGaugeWithInfo({
@@ -51,6 +52,7 @@ export default function BiometricGaugeWithInfo({
   indicatorCode,
   label,
   className,
+  riskRanges,
 }: BiometricGaugeWithInfoProps) {
   const [indicatorInfo, setIndicatorInfo] = useState<IndicatorInfo | null>(null);
   const [benefitLinks, setBenefitLinks] = useState<BenefitLink[]>([]);
@@ -156,6 +158,8 @@ export default function BiometricGaugeWithInfo({
         min={0}
         max={100}
         className={className}
+        riskRanges={riskRanges}
+        indicatorCode={indicatorCode}
       />
     );
   }
@@ -173,6 +177,8 @@ export default function BiometricGaugeWithInfo({
         min={indicatorInfo.min_value}
         max={indicatorInfo.max_value}
         className={className}
+        riskRanges={riskRanges || indicatorInfo.risk_ranges}
+        indicatorCode={indicatorCode}
       />
       
       {/* Benefits Star Button (if benefits exist) */}

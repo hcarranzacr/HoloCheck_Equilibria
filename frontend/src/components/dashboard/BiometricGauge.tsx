@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { evaluateRange } from '@/lib/biometric-range-evaluator';
 
 interface BiometricGaugeProps {
   value: number;
@@ -24,6 +25,9 @@ interface BiometricGaugeProps {
     color: string;
   }>;
   className?: string;
+  // NEW PROPS for dynamic color evaluation
+  riskRanges?: Record<string, [number, number]> | null;
+  indicatorCode?: string;
 }
 
 const BiometricGauge: React.FC<BiometricGaugeProps> = ({
@@ -32,24 +36,47 @@ const BiometricGauge: React.FC<BiometricGaugeProps> = ({
   max,
   unit,
   label,
-  status = 'Normal',
-  statusColor = '#10b981',
+  status,
+  statusColor,
   description,
   icon,
   size = 'medium',
-  gradientColors = ['#10b981', '#06b6d4'], // Default gradient
+  gradientColors,
   showRecommendation = false,
   recommendation,
   showRanges = false,
   ranges = [],
-  className = ''
+  className = '',
+  riskRanges,
+  indicatorCode
 }) => {
   // Validate and sanitize inputs
   const safeValue = typeof value === 'number' && !isNaN(value) ? value : 0;
   const safeMin = typeof min === 'number' && !isNaN(min) ? min : 0;
   const safeMax = typeof max === 'number' && !isNaN(max) ? max : 100;
-  const safeGradientColors = Array.isArray(gradientColors) && gradientColors.length > 0 
-    ? gradientColors 
+  
+  // Evaluate range dynamically if riskRanges provided
+  const evaluation = riskRanges 
+    ? evaluateRange(safeValue, riskRanges, indicatorCode)
+    : null;
+  
+  // Use evaluated color and status, or fall back to props
+  const finalStatusColor = evaluation?.color || statusColor || '#10b981';
+  const finalStatus = evaluation ? `${evaluation.emoji} ${evaluation.level}` : (status || 'Normal');
+  const finalRangeLabel = evaluation?.rangeLabel || '';
+  
+  // Determine gradient colors based on evaluation
+  let finalGradientColors = gradientColors;
+  if (!finalGradientColors && evaluation) {
+    // Use single color for gradient based on evaluation
+    finalGradientColors = [evaluation.color, evaluation.color];
+  }
+  if (!finalGradientColors) {
+    finalGradientColors = ['#10b981', '#06b6d4']; // Default
+  }
+  
+  const safeGradientColors = Array.isArray(finalGradientColors) && finalGradientColors.length > 0 
+    ? finalGradientColors 
     : ['#10b981', '#06b6d4'];
   
   // Calculate percentage for gauge
@@ -128,7 +155,7 @@ const BiometricGauge: React.FC<BiometricGaugeProps> = ({
               cx={indicatorX}
               cy={indicatorY}
               r="4"
-              fill={statusColor}
+              fill={finalStatusColor}
               stroke="white"
               strokeWidth="2"
             />
@@ -144,18 +171,21 @@ const BiometricGauge: React.FC<BiometricGaugeProps> = ({
         <div className="text-sm font-medium text-gray-500 mt-1">{unit}</div>
       </div>
       
-      {/* Status badge */}
+      {/* Status badge with range */}
       <div className="text-center mb-3">
         <Badge 
           className="text-sm px-3 py-1"
           style={{ 
-            backgroundColor: `${statusColor}20`, 
-            color: statusColor,
-            border: `1px solid ${statusColor}40`
+            backgroundColor: `${finalStatusColor}20`, 
+            color: finalStatusColor,
+            border: `1px solid ${finalStatusColor}40`
           }}
         >
-          {status}
+          {finalStatus}
         </Badge>
+        {finalRangeLabel && finalRangeLabel !== 'N/D' && (
+          <p className="text-xs text-gray-500 mt-1">Rango: {finalRangeLabel}</p>
+        )}
         {description && (
           <p className="text-xs text-gray-600 mt-2">{description}</p>
         )}
