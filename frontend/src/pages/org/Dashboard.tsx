@@ -10,13 +10,11 @@ import {
   CreditCard,
   Users,
   Activity,
-  TrendingUp,
-  TrendingDown,
   Calendar,
   BarChart3,
   AlertTriangle,
   RefreshCw,
-  Clock,
+  Clock as ClockIcon,
   CheckCircle,
   XCircle
 } from 'lucide-react';
@@ -60,25 +58,6 @@ interface UserScanUsage {
   last_scan_date: string;
 }
 
-// Centralized logging function
-async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('system_logs').insert({
-      user_id: user?.id,
-      action,
-      details: JSON.stringify(details),
-      level,
-      created_at: new Date().toISOString()
-    });
-    
-    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
-    console.log(`${emoji} [Org Admin Dashboard] ${action}:`, details);
-  } catch (error) {
-    console.error('❌ [Org Admin Dashboard] Error logging activity:', error);
-  }
-}
-
 export default function OrgDashboard() {
   const [subscription, setSubscription] = useState<OrganizationSubscription | null>(null);
   const [usageSummaries, setUsageSummaries] = useState<OrganizationUsageSummary[]>([]);
@@ -87,12 +66,12 @@ export default function OrgDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const loadDashboardData = async () => {
     try {
       setError(null);
       console.log('📊 [Org Admin Dashboard] Loading data...');
-      await logActivity('dashboard_load_start', { dashboard: 'org_admin' }, 'info');
 
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -108,12 +87,10 @@ export default function OrgDashboard() {
 
       if (profileError) {
         console.error('❌ [Org Admin Dashboard] Error loading profile:', profileError);
-        await logActivity('profile_load_error', { error: profileError.message }, 'error');
         throw new Error('Error loading user profile');
       }
 
       const orgId = profile.organization_id;
-      console.log('✅ [Org Admin Dashboard] User organization:', orgId);
 
       // Load organization subscription
       const { data: subData, error: subError } = await supabase
@@ -125,13 +102,8 @@ export default function OrgDashboard() {
         .limit(1)
         .single();
 
-      if (subError) {
-        console.error('⚠️ [Org Admin Dashboard] No active subscription found:', subError);
-        await logActivity('subscription_load_warning', { error: subError.message }, 'warning');
-      } else {
+      if (!subError) {
         setSubscription(subData);
-        console.log('✅ [Org Admin Dashboard] Subscription loaded:', subData);
-        await logActivity('subscription_loaded', { subscription_id: subData.id }, 'info');
       }
 
       // Load usage summaries (last 6 months)
@@ -142,16 +114,11 @@ export default function OrgDashboard() {
         .order('month', { ascending: false })
         .limit(6);
 
-      if (summariesError) {
-        console.error('⚠️ [Org Admin Dashboard] Error loading usage summaries:', summariesError);
-        await logActivity('summaries_load_warning', { error: summariesError.message }, 'warning');
-      } else {
+      if (!summariesError) {
         setUsageSummaries(summariesData || []);
         if (summariesData && summariesData.length > 0) {
           setCurrentMonthUsage(summariesData[0]);
         }
-        console.log('✅ [Org Admin Dashboard] Usage summaries loaded:', summariesData?.length);
-        await logActivity('summaries_loaded', { count: summariesData?.length }, 'info');
       }
 
       // Load user scan usage
@@ -166,10 +133,7 @@ export default function OrgDashboard() {
         .order('total_scans', { ascending: false })
         .limit(20);
 
-      if (usageError) {
-        console.error('⚠️ [Org Admin Dashboard] Error loading user usage:', usageError);
-        await logActivity('user_usage_load_warning', { error: usageError.message }, 'warning');
-      } else {
+      if (!usageError) {
         const formattedUsage = usageData?.map(item => ({
           user_id: item.user_id,
           full_name: (item.user_profiles as any)?.full_name || 'Unknown',
@@ -180,18 +144,16 @@ export default function OrgDashboard() {
         })) || [];
         
         setUserUsage(formattedUsage);
-        console.log('✅ [Org Admin Dashboard] User usage loaded:', formattedUsage.length);
-        await logActivity('user_usage_loaded', { count: formattedUsage.length }, 'info');
       }
 
-      await logActivity('dashboard_load_complete', { dashboard: 'org_admin' }, 'info');
+      console.log('✅ [Org Admin Dashboard] Data loaded');
+      setLastUpdated(new Date());
 
     } catch (err: any) {
       const errorMsg = err?.message || 'Error loading dashboard data';
       console.error('❌ [Org Admin Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
-      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -203,7 +165,7 @@ export default function OrgDashboard() {
   }, []);
 
   const handleRefresh = () => {
-    console.log('🔄 [Org Admin Dashboard] Refreshing data...');
+    console.log('🔄 [Org Admin Dashboard] Manual refresh triggered');
     setRefreshing(true);
     loadDashboardData();
   };
@@ -270,10 +232,18 @@ export default function OrgDashboard() {
             Uso del sistema y gestión de suscripción
           </p>
         </div>
-        <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
-          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Actualizar
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
+            <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+          {lastUpdated && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ClockIcon className="h-4 w-4" />
+              <span>{lastUpdated.toLocaleTimeString('es-ES')}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Subscription Status */}
@@ -476,7 +446,7 @@ export default function OrgDashboard() {
                           <span>{user.department_name}</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
+                            <ClockIcon className="h-3 w-3" />
                             {new Date(user.last_scan_date).toLocaleDateString()}
                           </span>
                         </div>

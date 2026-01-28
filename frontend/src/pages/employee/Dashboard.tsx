@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Activity, TrendingUp, Calendar, Heart } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Activity, TrendingUp, Calendar, Heart, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
 import BiometricGauge from '@/components/dashboard/BiometricGauge';
@@ -31,21 +32,17 @@ interface DashboardData {
 export default function EmployeeDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [ranges, setRanges] = useState<Record<string, Record<string, [number, number]>>>({});
-
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
 
   async function loadDashboardData() {
     try {
-      setLoading(true);
       console.log('📊 [Employee Dashboard] Loading data...');
 
       // Fetch biometric indicator ranges
       const rangesData = await apiClient.getBiometricIndicatorRanges();
       setRanges(rangesData);
-      console.log('✅ [Employee Dashboard] Ranges loaded:', rangesData);
 
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
@@ -107,14 +104,26 @@ export default function EmployeeDashboard() {
         },
       };
 
-      console.log('✅ [Employee Dashboard] Data loaded:', dashboardData);
+      console.log('✅ [Employee Dashboard] Data loaded');
       setData(dashboardData);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const handleRefresh = () => {
+    console.log('🔄 [Employee Dashboard] Manual refresh triggered');
+    setRefreshing(true);
+    loadDashboardData();
+  };
 
   if (loading) {
     return (
@@ -168,7 +177,7 @@ export default function EmployeeDashboard() {
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-6">
         <Card className="bg-gradient-to-r from-sky-600 to-blue-600 text-white rounded-2xl shadow-xl p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-3xl font-bold mb-2">
                 👋 ¡Hola, {data.user_profile.full_name}!
@@ -190,6 +199,25 @@ export default function EmployeeDashboard() {
                 {wellnessStatus}
               </Badge>
             </div>
+          </div>
+          
+          {/* Last Updated & Refresh Button */}
+          <div className="flex items-center justify-between pt-4 border-t border-sky-400">
+            <div className="flex items-center gap-2 text-sm text-sky-100">
+              <Clock className="h-4 w-4" />
+              <span>
+                Última actualización: {lastUpdated ? lastUpdated.toLocaleTimeString('es-ES') : 'N/A'}
+              </span>
+            </div>
+            <Button 
+              onClick={handleRefresh} 
+              disabled={refreshing} 
+              variant="secondary" 
+              size="sm"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
           </div>
         </Card>
       </div>

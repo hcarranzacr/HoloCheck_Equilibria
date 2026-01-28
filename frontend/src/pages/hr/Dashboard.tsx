@@ -25,7 +25,7 @@ import {
   Zap,
   Moon,
   Calendar,
-  BarChart3
+  Clock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -112,25 +112,6 @@ interface LoyaltyProgram {
   link_url: string;
 }
 
-// Centralized logging function
-async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('system_logs').insert({
-      user_id: user?.id,
-      action,
-      details: JSON.stringify(details),
-      level,
-      created_at: new Date().toISOString()
-    });
-    
-    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
-    console.log(`${emoji} [HR Dashboard] ${action}:`, details);
-  } catch (error) {
-    console.error('❌ [HR Dashboard] Error logging activity:', error);
-  }
-}
-
 export default function HRDashboard() {
   const [orgInsight, setOrgInsight] = useState<OrganizationInsight | null>(null);
   const [deptMetrics, setDeptMetrics] = useState<DepartmentMetrics[]>([]);
@@ -140,6 +121,7 @@ export default function HRDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<string>('all');
 
@@ -147,7 +129,6 @@ export default function HRDashboard() {
     try {
       setError(null);
       console.log('📊 [HR Dashboard] Loading data...');
-      await logActivity('dashboard_load_start', { dashboard: 'hr' }, 'info');
 
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -163,12 +144,10 @@ export default function HRDashboard() {
 
       if (profileError) {
         console.error('❌ [HR Dashboard] Error loading profile:', profileError);
-        await logActivity('profile_load_error', { error: profileError.message }, 'error');
         throw new Error('Error loading user profile');
       }
 
       const orgId = profile.organization_id;
-      console.log('✅ [HR Dashboard] User organization:', orgId);
 
       // Load organization insights
       const { data: insightData, error: insightError } = await supabase
@@ -179,13 +158,8 @@ export default function HRDashboard() {
         .limit(1)
         .single();
 
-      if (insightError) {
-        console.error('⚠️ [HR Dashboard] No organization insights found:', insightError);
-        await logActivity('org_insight_load_warning', { error: insightError.message }, 'warning');
-      } else {
+      if (!insightError) {
         setOrgInsight(insightData);
-        console.log('✅ [HR Dashboard] Organization insight loaded:', insightData);
-        await logActivity('org_insight_loaded', { organization_id: orgId }, 'info');
       }
 
       // Load department metrics - need to get departments first
@@ -194,9 +168,7 @@ export default function HRDashboard() {
         .select('id')
         .eq('organization_id', orgId);
 
-      if (deptsError) {
-        console.error('⚠️ [HR Dashboard] Error loading departments:', deptsError);
-      } else {
+      if (!deptsError) {
         const deptIds = departments?.map(d => d.id) || [];
         
         if (deptIds.length > 0) {
@@ -206,12 +178,8 @@ export default function HRDashboard() {
             .in('department_id', deptIds)
             .order('avg_wellness_index', { ascending: false });
 
-          if (metricsError) {
-            console.error('⚠️ [HR Dashboard] Error loading department metrics:', metricsError);
-          } else {
+          if (!metricsError) {
             setDeptMetrics(metricsData || []);
-            console.log('✅ [HR Dashboard] Department metrics loaded:', metricsData?.length);
-            await logActivity('dept_metrics_loaded', { count: metricsData?.length }, 'info');
           }
         }
       }
@@ -223,13 +191,8 @@ export default function HRDashboard() {
         .eq('organization_id', orgId)
         .order('ai_stress', { ascending: false });
 
-      if (riskError) {
-        console.error('⚠️ [HR Dashboard] Error loading at-risk employees:', riskError);
-        await logActivity('at_risk_load_warning', { error: riskError.message }, 'warning');
-      } else {
+      if (!riskError) {
         setEmployeesAtRisk(riskData || []);
-        console.log('✅ [HR Dashboard] At-risk employees loaded:', riskData?.length);
-        await logActivity('at_risk_loaded', { count: riskData?.length }, 'info');
       }
 
       // Load department insights - ALL 19 FIELDS, ONLY LATEST PER DEPARTMENT
@@ -263,9 +226,7 @@ export default function HRDashboard() {
           .in('department_id', deptIds)
           .order('created_at', { ascending: false });
 
-        if (insightsError) {
-          console.error('⚠️ [HR Dashboard] Error loading department insights:', insightsError);
-        } else {
+        if (!insightsError) {
           // Filter to get ONLY the latest insight per department
           const latestInsightsByDept = new Map<string, any>();
           insightsData?.forEach(insight => {
@@ -280,8 +241,6 @@ export default function HRDashboard() {
           }));
           
           setDeptInsights(uniqueInsights);
-          console.log('✅ [HR Dashboard] Department insights loaded (unique):', uniqueInsights.length);
-          await logActivity('dept_insights_loaded', { count: uniqueInsights.length }, 'info');
         }
       }
 
@@ -293,23 +252,18 @@ export default function HRDashboard() {
         .eq('benefit_active', true)
         .order('relevance_level', { ascending: false });
 
-      if (programsError) {
-        console.error('⚠️ [HR Dashboard] Error loading loyalty programs:', programsError);
-        await logActivity('programs_load_warning', { error: programsError.message }, 'warning');
-      } else {
+      if (!programsError) {
         setLoyaltyPrograms(programsData || []);
-        console.log('✅ [HR Dashboard] Loyalty programs loaded:', programsData?.length);
-        await logActivity('programs_loaded', { count: programsData?.length }, 'info');
       }
 
-      await logActivity('dashboard_load_complete', { dashboard: 'hr' }, 'info');
+      console.log('✅ [HR Dashboard] Data loaded');
+      setLastUpdated(new Date());
 
     } catch (err: any) {
       const errorMsg = err?.message || 'Error loading dashboard data';
       console.error('❌ [HR Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
-      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -321,7 +275,7 @@ export default function HRDashboard() {
   }, []);
 
   const handleRefresh = () => {
-    console.log('🔄 [HR Dashboard] Refreshing data...');
+    console.log('🔄 [HR Dashboard] Manual refresh triggered');
     setRefreshing(true);
     loadDashboardData();
   };
@@ -425,10 +379,18 @@ export default function HRDashboard() {
                 Vista Organizacional - {orgInsight?.total_employees || 0} Colaboradores
               </p>
             </div>
-            <Button onClick={handleRefresh} disabled={refreshing} variant="secondary" size="sm">
-              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              Actualizar
-            </Button>
+            <div className="flex flex-col items-end gap-2">
+              <Button onClick={handleRefresh} disabled={refreshing} variant="secondary" size="sm">
+                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Actualizar
+              </Button>
+              {lastUpdated && (
+                <div className="flex items-center gap-2 text-sm text-blue-100">
+                  <Clock className="h-4 w-4" />
+                  <span>{lastUpdated.toLocaleTimeString('es-ES')}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Wellness Score - Large Display */}

@@ -22,7 +22,8 @@ import {
   Target,
   Zap,
   Shield,
-  Sparkles
+  Sparkles,
+  Clock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -92,25 +93,6 @@ interface LatestScan {
   created_at: string;
 }
 
-// Centralized logging function
-async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('system_logs').insert({
-      user_id: user?.id,
-      action,
-      details: JSON.stringify(details),
-      level,
-      created_at: new Date().toISOString()
-    });
-    
-    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
-    console.log(`${emoji} [Leader Dashboard] ${action}:`, details);
-  } catch (error) {
-    console.error('❌ [Leader Dashboard] Error logging activity:', error);
-  }
-}
-
 export default function LeaderDashboard() {
   const [insights, setInsights] = useState<DepartmentInsight | null>(null);
   const [metrics, setMetrics] = useState<DepartmentMetrics | null>(null);
@@ -120,13 +102,13 @@ export default function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [userDepartmentId, setUserDepartmentId] = useState<string | null>(null);
 
   const loadDashboardData = async () => {
     try {
       setError(null);
       console.log('📊 [Leader Dashboard] Loading data...');
-      await logActivity('dashboard_load_start', { dashboard: 'leader' }, 'info');
 
       // Get current user and department
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -142,14 +124,12 @@ export default function LeaderDashboard() {
 
       if (profileError) {
         console.error('❌ [Leader Dashboard] Error loading profile:', profileError);
-        await logActivity('profile_load_error', { error: profileError.message }, 'error');
         throw new Error('Error loading user profile');
       }
 
       const deptId = profile.department_id;
       const orgId = profile.organization_id;
       setUserDepartmentId(deptId);
-      console.log('✅ [Leader Dashboard] User department:', deptId);
 
       // Load department insights
       const { data: insightsData, error: insightsError } = await supabase
@@ -160,13 +140,8 @@ export default function LeaderDashboard() {
         .limit(1)
         .single();
 
-      if (insightsError) {
-        console.error('⚠️ [Leader Dashboard] No insights found:', insightsError);
-        await logActivity('insights_load_warning', { error: insightsError.message }, 'warning');
-      } else {
+      if (!insightsError) {
         setInsights(insightsData);
-        console.log('✅ [Leader Dashboard] Insights loaded:', insightsData);
-        await logActivity('insights_loaded', { department_id: deptId }, 'info');
       }
 
       // Load department metrics
@@ -176,13 +151,8 @@ export default function LeaderDashboard() {
         .eq('department_id', deptId)
         .single();
 
-      if (metricsError) {
-        console.error('⚠️ [Leader Dashboard] No metrics found:', metricsError);
-        await logActivity('metrics_load_warning', { error: metricsError.message }, 'warning');
-      } else {
+      if (!metricsError) {
         setMetrics(metricsData);
-        console.log('✅ [Leader Dashboard] Metrics loaded:', metricsData);
-        await logActivity('metrics_loaded', { department_id: deptId }, 'info');
       }
 
       // Load employees at risk from department
@@ -192,13 +162,8 @@ export default function LeaderDashboard() {
         .eq('department_id', deptId)
         .order('ai_stress', { ascending: false });
 
-      if (riskError) {
-        console.error('⚠️ [Leader Dashboard] Error loading at-risk employees:', riskError);
-        await logActivity('at_risk_load_warning', { error: riskError.message }, 'warning');
-      } else {
+      if (!riskError) {
         setEmployeesAtRisk(riskData || []);
-        console.log('✅ [Leader Dashboard] At-risk employees loaded:', riskData?.length);
-        await logActivity('at_risk_loaded', { count: riskData?.length }, 'info');
       }
 
       // Load loyalty programs relevant to department
@@ -208,13 +173,8 @@ export default function LeaderDashboard() {
         .eq('organization_id', orgId)
         .limit(5);
 
-      if (programsError) {
-        console.error('⚠️ [Leader Dashboard] Error loading loyalty programs:', programsError);
-        await logActivity('programs_load_warning', { error: programsError.message }, 'warning');
-      } else {
+      if (!programsError) {
         setLoyaltyPrograms(programsData || []);
-        console.log('✅ [Leader Dashboard] Loyalty programs loaded:', programsData?.length);
-        await logActivity('programs_loaded', { count: programsData?.length }, 'info');
       }
 
       // Load latest scans from department
@@ -223,9 +183,7 @@ export default function LeaderDashboard() {
         .select('user_id')
         .eq('department_id', deptId);
 
-      if (usersError) {
-        console.error('⚠️ [Leader Dashboard] Error loading department users:', usersError);
-      } else {
+      if (!usersError) {
         const userIds = deptUsers?.map(u => u.user_id) || [];
         
         if (userIds.length > 0) {
@@ -244,9 +202,7 @@ export default function LeaderDashboard() {
             .order('created_at', { ascending: false })
             .limit(10);
 
-          if (scansError) {
-            console.error('⚠️ [Leader Dashboard] Error loading scans:', scansError);
-          } else {
+          if (!scansError) {
             const formattedScans = scansData?.map(scan => ({
               user_id: scan.user_id,
               full_name: (scan.user_profiles as any)?.full_name || 'Unknown',
@@ -258,20 +214,18 @@ export default function LeaderDashboard() {
             })) || [];
             
             setLatestScans(formattedScans);
-            console.log('✅ [Leader Dashboard] Scans loaded:', formattedScans.length);
-            await logActivity('scans_loaded', { count: formattedScans.length }, 'info');
           }
         }
       }
 
-      await logActivity('dashboard_load_complete', { dashboard: 'leader' }, 'info');
+      console.log('✅ [Leader Dashboard] Data loaded');
+      setLastUpdated(new Date());
 
     } catch (err: any) {
       const errorMsg = err?.message || 'Error loading dashboard data';
       console.error('❌ [Leader Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
-      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -283,7 +237,7 @@ export default function LeaderDashboard() {
   }, []);
 
   const handleRefresh = () => {
-    console.log('🔄 [Leader Dashboard] Refreshing data...');
+    console.log('🔄 [Leader Dashboard] Manual refresh triggered');
     setRefreshing(true);
     loadDashboardData();
   };
@@ -375,10 +329,18 @@ export default function LeaderDashboard() {
                 {metrics?.department_name || 'Tu Departamento'} - {metrics?.employee_count || 0} Colaboradores
               </p>
             </div>
-            <Button onClick={handleRefresh} disabled={refreshing} variant="secondary" size="sm">
-              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              Actualizar
-            </Button>
+            <div className="flex flex-col items-end gap-2">
+              <Button onClick={handleRefresh} disabled={refreshing} variant="secondary" size="sm">
+                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Actualizar
+              </Button>
+              {lastUpdated && (
+                <div className="flex items-center gap-2 text-sm text-blue-100">
+                  <Clock className="h-4 w-4" />
+                  <span>{lastUpdated.toLocaleTimeString('es-ES')}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Wellness Score - Large Display */}
