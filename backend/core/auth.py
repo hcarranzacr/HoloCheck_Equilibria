@@ -75,14 +75,14 @@ class AccessTokenError(Exception):
 
 def create_access_token(claims: Dict[str, Any], expires_minutes: Optional[int] = None) -> str:
     """Create signed JWT access token from provided claims."""
-    if not settings.jwt_secret_key:
+    if not settings.jwt_secret:
         logger.error("JWT secret key is not configured")
         raise ValueError("JWT secret key is not configured")
 
     now = datetime.now(timezone.utc)
     token_claims = claims.copy()
 
-    expiry_minutes = expires_minutes if expires_minutes is not None else int(settings.jwt_expire_minutes)
+    expiry_minutes = expires_minutes if expires_minutes is not None else int(settings.jwt_expiration_minutes)
     expire_at = now + timedelta(minutes=expiry_minutes)
 
     token_claims.update(
@@ -93,7 +93,7 @@ def create_access_token(claims: Dict[str, Any], expires_minutes: Optional[int] =
         }
     )
 
-    token = jwt.encode(token_claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    token = jwt.encode(token_claims, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     # Log user hash instead of actual user ID to avoid exposing sensitive information
     user_id = token_claims.get("sub", "unknown")
     user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8] if user_id != "unknown" else "unknown"
@@ -103,12 +103,12 @@ def create_access_token(claims: Dict[str, Any], expires_minutes: Optional[int] =
 
 def decode_access_token(token: str) -> Dict[str, Any]:
     """Decode and validate JWT access token."""
-    if not settings.jwt_secret_key:
+    if not settings.jwt_secret:
         logger.error("JWT secret key is not configured")
         raise AccessTokenError("Authentication service is misconfigured")
 
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         # Log user hash instead of actual user ID to avoid exposing sensitive information
         user_id = payload.get("sub", "unknown")
         user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8] if user_id != "unknown" else "unknown"
