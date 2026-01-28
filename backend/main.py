@@ -37,6 +37,7 @@ from routers import (
     organization_subscriptions,
     organization_usage_summary,
     param_industries,
+    recommendations,
 )
 
 logger.info("✅ All routers imported successfully")
@@ -90,6 +91,7 @@ app.include_router(organization_insights.router)
 app.include_router(organization_subscriptions.router)
 app.include_router(organization_usage_summary.router)
 app.include_router(param_industries.router)
+app.include_router(recommendations.router)
 
 logger.info("✅ Application startup complete")
 

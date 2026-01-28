@@ -1,50 +1,51 @@
-from core.database import Base
-from sqlalchemy import Column, DateTime, Float, Integer, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from datetime import datetime
+
+from core.database import Base
 
 
 class Biometric_measurements(Base):
+    """Biometric measurements model - stores user health metrics"""
     __tablename__ = "biometric_measurements"
-    __table_args__ = {"extend_existing": True}
 
-    # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, index=True, nullable=False)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # CRITICAL FIX: Change user_id from UUID to String to match user_profiles.user_id
+    user_id = Column(String, ForeignKey("user_profiles.user_id"), nullable=False, index=True)
     
-    # Foreign key to user_profiles
-    user_id = Column(UUID(as_uuid=True), ForeignKey("user_profiles.user_id"), nullable=False)
+    # Identificador único de medición
+    measurement_id = Column(String, nullable=False, unique=True, index=True)
     
     # Indicadores vitales y fisiológicos
     heart_rate = Column(Float, nullable=True)
     sdnn = Column(Float, nullable=True)
     rmssd = Column(Float, nullable=True)
+    respiration_rate = Column(Float, nullable=True)
+    bp_systolic = Column(Float, nullable=True)
+    bp_diastolic = Column(Float, nullable=True)
+    
+    # Indicadores de IA
     ai_stress = Column(Float, nullable=True)
     ai_fatigue = Column(Float, nullable=True)
     ai_cognitive_load = Column(Float, nullable=True)
     ai_recovery = Column(Float, nullable=True)
-    bio_age_basic = Column(Float, nullable=True)
     
-    # Nuevos indicadores DeepAffex
-    vital_index_score = Column(Float, nullable=True)
-    physiological_score = Column(Float, nullable=True)
+    # Scores compuestos
     mental_score = Column(Float, nullable=True)
-    wellness_index_score = Column(Float, nullable=True)
-    mental_stress_index = Column(Float, nullable=True)
-    cardiac_load = Column(Float, nullable=True)
-    vascular_capacity = Column(Float, nullable=True)
-    cv_risk_heart_attack = Column(Float, nullable=True)
-    cv_risk_stroke = Column(Float, nullable=True)
+    bio_age_basic = Column(Float, nullable=True)
+    cvd_risk = Column(Float, nullable=True)
+    health_score = Column(Float, nullable=True)
+    vital_score = Column(Float, nullable=True)
+    physio_score = Column(Float, nullable=True)
+    risks_score = Column(Float, nullable=True)
+    quality_score = Column(Float, nullable=True)
     
-    # Composición corporal
-    bmi = Column(Float, nullable=True)
-    abdominal_circumference_cm = Column(Float, nullable=True)
-    waist_height_ratio = Column(Float, nullable=True)
-    body_shape_index = Column(Float, nullable=True)
+    # Raw data storage
+    raw_data = Column(JSON, nullable=True)
     
-    # Indicadores técnicos
-    arrhythmias_detected = Column(Integer, nullable=True)
-    signal_to_noise_ratio = Column(Float, nullable=True)
-    scan_quality_index = Column(Float, nullable=True)
-    global_health_score = Column(Float, nullable=True)
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    # Timestamp
-    created_at = Column(DateTime(timezone=True), nullable=True)
+    # Relationship
+    user_profile = relationship("UserProfile", foreign_keys=[user_id], backref="biometric_measurements")
