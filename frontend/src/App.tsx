@@ -47,6 +47,10 @@ import OrgMeasurements from './pages/org/measurements';
 import OrgAIAnalyses from './pages/org/ai-analyses';
 import OrgPrompts from './pages/org/prompts';
 import OrgInsights from './pages/org/insights';
+// Org Admin CRUD Management pages
+import UsersManagement from './pages/org/UsersManagement';
+import DepartmentsManagement from './pages/org/DepartmentsManagement';
+import PromptsManagement from './pages/org/PromptsManagement';
 
 // Admin pages
 import Organizations from './pages/admin/organizations';
@@ -78,6 +82,7 @@ const App = () => {
   console.log('📋 [App] Leader routes: /leader/dashboard, /leader/team, /leader/insights');
   console.log('📋 [App] HR routes: /hr/dashboard, /hr/insights, /hr/measurements');
   console.log('📋 [App] Org routes: /org/dashboard, /org/insights, /org/users');
+  console.log('📋 [App] Org CRUD routes: /org/users-management, /org/departments-management, /org/prompts-management');
   console.log('📋 [App] Admin routes: /admin/organizations, /admin/partnerships, /admin/benefits-management');
   console.log('📖 [App] User Manual route: /user-manual');
   
@@ -137,6 +142,11 @@ const App = () => {
                     <Route path="/org/ai-analyses" element={<OrgAIAnalyses />} />
                     <Route path="/org/prompts" element={<OrgPrompts />} />
                     <Route path="/org/insights" element={<OrgInsights />} />
+                    
+                    {/* Organization Admin CRUD Management routes */}
+                    <Route path="/org/users-management" element={<UsersManagement />} />
+                    <Route path="/org/departments-management" element={<DepartmentsManagement />} />
+                    <Route path="/org/prompts-management" element={<PromptsManagement />} />
                     
                     {/* Platform Admin routes */}
                     <Route path="/admin/organizations" element={<Organizations />} />

@@ -182,32 +182,32 @@ export default function OrgDashboard() {
 
       // Load organization statistics
       // Count total users
-      const { count: usersCount, error: usersCountError } = await supabase
+      const { count: usersCount } = await supabase
         .from('user_profiles')
         .select('*', { count: 'exact', head: true })
         .eq('organization_id', orgId);
 
       // Count active users
-      const { count: activeUsersCount, error: activeUsersError } = await supabase
+      const { count: activeUsersCount } = await supabase
         .from('user_profiles')
         .select('*', { count: 'exact', head: true })
         .eq('organization_id', orgId)
         .eq('is_active', true);
 
       // Count departments
-      const { count: deptsCount, error: deptsCountError } = await supabase
+      const { count: deptsCount } = await supabase
         .from('departments')
         .select('*', { count: 'exact', head: true })
         .eq('organization_id', orgId)
         .eq('is_active', true);
 
       // Count measurements
-      const { count: measurementsCount, error: measurementsError } = await supabase
+      const { count: measurementsCount } = await supabase
         .from('biometric_measurements')
         .select('user_id', { count: 'exact', head: true });
 
       // Count prompts
-      const { count: promptsCount, error: promptsError } = await supabase
+      const { count: promptsCount } = await supabase
         .from('prompts')
         .select('*', { count: 'exact', head: true })
         .eq('organization_id', orgId)
@@ -356,7 +356,7 @@ export default function OrgDashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <Card 
             className="border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate('/org/users')}
+            onClick={() => navigate('/org/users-management')}
           >
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -365,9 +365,9 @@ export default function OrgDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-lg mb-2">Usuarios</CardTitle>
+              <CardTitle className="text-lg mb-2">Gestión de Usuarios</CardTitle>
               <CardDescription>
-                Gestiona {orgStats.totalUsers} usuarios de la organización
+                Administra {orgStats.totalUsers} usuarios - Crear, editar y eliminar
               </CardDescription>
               <div className="mt-3">
                 <Badge variant="secondary">{orgStats.activeUsers} activos</Badge>
@@ -377,7 +377,7 @@ export default function OrgDashboard() {
 
           <Card 
             className="border-l-4 border-l-green-500 hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate('/org/departments')}
+            onClick={() => navigate('/org/departments-management')}
           >
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -386,13 +386,36 @@ export default function OrgDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-lg mb-2">Departamentos</CardTitle>
+              <CardTitle className="text-lg mb-2">Gestión de Departamentos</CardTitle>
               <CardDescription>
-                Administra {orgStats.totalDepartments} departamentos
+                Administra {orgStats.totalDepartments} departamentos - CRUD completo
               </CardDescription>
               <div className="mt-3">
                 <Badge variant="secondary" className="bg-green-100 text-green-800">
                   Crear nuevo
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-teal-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/prompts-management')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <MessageSquare className="h-8 w-8 text-teal-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Gestión de Prompts IA</CardTitle>
+              <CardDescription>
+                {orgStats.totalPrompts} prompts - Crear, editar y eliminar
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-teal-100 text-teal-800">
+                  Gestionar
                 </Badge>
               </div>
             </CardContent>
@@ -439,29 +462,6 @@ export default function OrgDashboard() {
               <div className="mt-3">
                 <Badge variant="secondary" className="bg-orange-100 text-orange-800">
                   Ver historial
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="border-l-4 border-l-teal-500 hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => navigate('/org/prompts')}
-          >
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <MessageSquare className="h-8 w-8 text-teal-600" />
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CardTitle className="text-lg mb-2">Prompts IA</CardTitle>
-              <CardDescription>
-                {orgStats.totalPrompts} prompts personalizados configurados
-              </CardDescription>
-              <div className="mt-3">
-                <Badge variant="secondary" className="bg-teal-100 text-teal-800">
-                  Gestionar
                 </Badge>
               </div>
             </CardContent>

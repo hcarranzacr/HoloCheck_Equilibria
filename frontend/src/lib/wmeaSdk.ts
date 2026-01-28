@@ -9,7 +9,7 @@ type WmeaModule = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __WMEA_SDK__: Promise<WmeaModule> | undefined;
 }
 
