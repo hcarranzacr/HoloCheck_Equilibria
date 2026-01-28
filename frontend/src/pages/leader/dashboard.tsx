@@ -3,8 +3,8 @@ import { Users, TrendingUp, Activity, AlertCircle, Calendar } from 'lucide-react
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { createClient } from '@metagptx/web-sdk';
 import { useToast } from '@/hooks/use-toast';
+import { apiClient } from '@/lib/api-client';
 import {
   Table,
   TableBody,
@@ -13,8 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-const client = createClient();
 
 interface TeamMember {
   user_id: string;
@@ -68,63 +66,30 @@ export default function LeaderDashboard() {
       setLoading(true);
       setError(null);
       
-      const url = '/api/v1/dashboards/leader';
-      console.log(`📡 [LEADER DASHBOARD] API Call - URL: ${url}, Method: GET`);
-      console.log(`🔑 [LEADER DASHBOARD] Checking authentication token...`);
+      console.log(`🔑 [LEADER DASHBOARD] Checking authentication...`);
+      const session = await apiClient.auth.getSession();
+      console.log(`🔐 [LEADER DASHBOARD] Session exists: ${!!session}, Token length: ${session?.access_token?.length || 0}`);
       
-      // Log token presence (not the actual token for security)
-      const token = localStorage.getItem('supabase.auth.token');
-      console.log(`🔐 [LEADER DASHBOARD] Token exists: ${!!token}, Length: ${token?.length || 0}`);
+      if (!session?.access_token) {
+        throw new Error('No estás autenticado. Por favor, inicia sesión nuevamente.');
+      }
 
-      console.log(`⏳ [LEADER DASHBOARD] Sending request...`);
-      const response = await client.apiCall.invoke({
-        url: url,
-        method: 'GET',
-      });
+      console.log(`📡 [LEADER DASHBOARD] Calling API...`);
+      const response = await apiClient.dashboards.leader();
 
-      console.log(`✅ [LEADER DASHBOARD] Response received - Status: 200`);
-      console.log(`📊 [LEADER DASHBOARD] Response data keys:`, Object.keys(response.data || {}));
-      console.log(`📋 [LEADER DASHBOARD] Full response data:`, response.data);
+      console.log(`✅ [LEADER DASHBOARD] Response received`);
+      console.log(`📊 [LEADER DASHBOARD] Data keys:`, Object.keys(response || {}));
+      console.log(`📋 [LEADER DASHBOARD] Full data:`, response);
       
-      console.log(`🔧 [LEADER DASHBOARD] Processing data...`);
-      console.log(`👥 [LEADER DASHBOARD] Team size: ${response.data?.team_size || 0}`);
-      console.log(`📈 [LEADER DASHBOARD] Total scans: ${response.data?.total_scans || 0}`);
-      console.log(`📊 [LEADER DASHBOARD] Team metrics:`, response.data?.team_metrics);
-
-      setData(response.data);
-      console.log(`✅ [LEADER DASHBOARD] SUCCESS - Data loaded and state updated`);
+      setData(response);
+      console.log(`✅ [LEADER DASHBOARD] SUCCESS`);
       
     } catch (err: any) {
-      console.error(`❌ [LEADER DASHBOARD] ERROR CAUGHT`);
-      console.error(`📛 [LEADER DASHBOARD] Error type: ${err?.constructor?.name || 'Unknown'}`);
-      console.error(`📛 [LEADER DASHBOARD] Error message: ${err?.message || 'No message'}`);
+      console.error(`❌ [LEADER DASHBOARD] ERROR`);
+      console.error(`📛 [LEADER DASHBOARD] Error:`, err);
       
-      // Log response details if available
-      if (err?.response) {
-        console.error(`📛 [LEADER DASHBOARD] Response status: ${err.response.status}`);
-        console.error(`📛 [LEADER DASHBOARD] Response data:`, err.response.data);
-        console.error(`📛 [LEADER DASHBOARD] Response headers:`, err.response.headers);
-      }
-      
-      // Log request details if available
-      if (err?.config) {
-        console.error(`📛 [LEADER DASHBOARD] Request URL: ${err.config.url}`);
-        console.error(`📛 [LEADER DASHBOARD] Request method: ${err.config.method}`);
-        console.error(`📛 [LEADER DASHBOARD] Request headers:`, err.config.headers);
-      }
-      
-      // Log SDK-specific error details
-      if (err?.data) {
-        console.error(`📛 [LEADER DASHBOARD] SDK error data:`, err.data);
-      }
-      
-      // Full error object
-      console.error(`📛 [LEADER DASHBOARD] Complete error object:`, err);
-      
-      const errorMsg =
-        err?.data?.detail || err?.response?.data?.detail || err.message || 'Error al cargar el dashboard';
-      
-      console.error(`📛 [LEADER DASHBOARD] Final error message: ${errorMsg}`);
+      const errorMsg = err?.message || err?.data?.detail || err?.response?.data?.detail || 'Error al cargar el dashboard';
+      console.error(`📛 [LEADER DASHBOARD] Error message: ${errorMsg}`);
       
       setError(errorMsg);
       toast({
@@ -134,7 +99,7 @@ export default function LeaderDashboard() {
       });
     } finally {
       setLoading(false);
-      console.log(`🏁 [LEADER DASHBOARD] Loading finished`);
+      console.log(`🏁 [LEADER DASHBOARD] Finished`);
     }
   };
 
@@ -185,12 +150,10 @@ export default function LeaderDashboard() {
     );
   }
 
-  // Safely get recent scans with fallback to empty array
   const recentScans = data.recent_scans || [];
   const teamMembers = data.team_members || [];
   const teamMetrics = data.team_metrics || {};
 
-  // Get team members with recent scans
   const membersWithScans = teamMembers.map((member) => {
     const memberScans = recentScans.filter((scan) => scan.user_id === member.user_id);
     const latestScan = memberScans.length > 0 ? memberScans[0] : null;
@@ -211,7 +174,6 @@ export default function LeaderDashboard() {
         </Badge>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -274,7 +236,6 @@ export default function LeaderDashboard() {
         </Card>
       </div>
 
-      {/* Team Members Table */}
       <Card>
         <CardHeader>
           <CardTitle>Estado del Equipo</CardTitle>
@@ -346,7 +307,6 @@ export default function LeaderDashboard() {
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
       {recentScans.length > 0 && (
         <Card>
           <CardHeader>

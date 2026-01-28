@@ -39,63 +39,36 @@ export default function HRDashboard() {
       setLoading(true);
       setError(null);
       
-      console.log(`📡 [HR DASHBOARD] API Call - Using apiClient.dashboards.hr()`);
-      console.log(`🔑 [HR DASHBOARD] Checking authentication token...`);
+      console.log(`🔑 [HR DASHBOARD] Checking authentication...`);
+      const session = await apiClient.auth.getSession();
+      console.log(`🔐 [HR DASHBOARD] Session exists: ${!!session}, Token length: ${session?.access_token?.length || 0}`);
       
-      // Log token presence (not the actual token for security)
-      const token = localStorage.getItem('supabase.auth.token');
-      console.log(`🔐 [HR DASHBOARD] Token exists: ${!!token}, Length: ${token?.length || 0}`);
-      
-      console.log(`⏳ [HR DASHBOARD] Sending request...`);
+      if (!session?.access_token) {
+        throw new Error('No estás autenticado. Por favor, inicia sesión nuevamente.');
+      }
+
+      console.log(`📡 [HR DASHBOARD] Calling API...`);
       const response = await apiClient.dashboards.hr();
       
       console.log(`✅ [HR DASHBOARD] Response received`);
-      console.log(`📊 [HR DASHBOARD] Response data keys:`, Object.keys(response || {}));
-      console.log(`📋 [HR DASHBOARD] Full response data:`, response);
-      
-      console.log(`🔧 [HR DASHBOARD] Processing data...`);
-      console.log(`👥 [HR DASHBOARD] Total employees: ${response?.total_employees || 0}`);
-      console.log(`🏛️ [HR DASHBOARD] Departments count: ${response?.departments_count || 0}`);
-      console.log(`📊 [HR DASHBOARD] Organization insights:`, response?.organization_insights);
+      console.log(`📊 [HR DASHBOARD] Data keys:`, Object.keys(response || {}));
+      console.log(`📋 [HR DASHBOARD] Full data:`, response);
       
       setData(response);
-      console.log(`✅ [HR DASHBOARD] SUCCESS - Data loaded and state updated`);
+      console.log(`✅ [HR DASHBOARD] SUCCESS`);
       
     } catch (err: any) {
-      console.error(`❌ [HR DASHBOARD] ERROR CAUGHT`);
-      console.error(`📛 [HR DASHBOARD] Error type: ${err?.constructor?.name || 'Unknown'}`);
-      console.error(`📛 [HR DASHBOARD] Error message: ${err?.message || 'No message'}`);
+      console.error(`❌ [HR DASHBOARD] ERROR`);
+      console.error(`📛 [HR DASHBOARD] Error:`, err);
       
-      // Log response details if available
-      if (err?.response) {
-        console.error(`📛 [HR DASHBOARD] Response status: ${err.response.status}`);
-        console.error(`📛 [HR DASHBOARD] Response data:`, err.response.data);
-        console.error(`📛 [HR DASHBOARD] Response headers:`, err.response.headers);
-      }
-      
-      // Log request details if available
-      if (err?.config) {
-        console.error(`📛 [HR DASHBOARD] Request URL: ${err.config.url}`);
-        console.error(`📛 [HR DASHBOARD] Request method: ${err.config.method}`);
-        console.error(`📛 [HR DASHBOARD] Request headers:`, err.config.headers);
-      }
-      
-      // Log SDK-specific error details
-      if (err?.data) {
-        console.error(`📛 [HR DASHBOARD] SDK error data:`, err.data);
-      }
-      
-      // Full error object
-      console.error(`📛 [HR DASHBOARD] Complete error object:`, err);
-      
-      const errorMsg = err.response?.data?.detail || err.message || 'Error al cargar datos del dashboard';
-      console.error(`📛 [HR DASHBOARD] Final error message: ${errorMsg}`);
+      const errorMsg = err?.message || err?.response?.data?.detail || err?.data?.detail || 'Error al cargar datos del dashboard';
+      console.error(`📛 [HR DASHBOARD] Error message: ${errorMsg}`);
       
       setError(errorMsg);
       toast.error('Error al cargar dashboard');
     } finally {
       setLoading(false);
-      console.log(`🏁 [HR DASHBOARD] Loading finished`);
+      console.log(`🏁 [HR DASHBOARD] Finished`);
     }
   };
 
@@ -138,13 +111,11 @@ export default function HRDashboard() {
     );
   }
 
-  // Safe data extraction with defaults
   const orgInsights = data.organization_insights || {};
   const currentUsage = data.usage_summary?.[0] || {};
   const departmentInsightsList = (data.department_insights || []);
   const usageTrendData = (data.usage_summary || []);
 
-  // Prepare department insights for InsightPanel
   const insightsPanelData = departmentInsightsList.map((dept, index) => ({
     id: `dept-${index}`,
     type: dept.insights?.burnout_risk_score > 70 ? 'danger' : 
@@ -156,7 +127,6 @@ export default function HRDashboard() {
     department: dept.department_name || 'Unknown'
   }));
 
-  // Prepare usage trend data
   const trendChartData = usageTrendData.map(usage => ({
     date: usage.month || '',
     value: usage.total_scans || 0
@@ -164,7 +134,6 @@ export default function HRDashboard() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Dashboard de Recursos Humanos</h1>
@@ -178,7 +147,6 @@ export default function HRDashboard() {
         </Button>
       </div>
 
-      {/* Métricas organizacionales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Total Empleados"
@@ -214,7 +182,6 @@ export default function HRDashboard() {
         />
       </div>
 
-      {/* Consumo de recursos */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ConsumptionWidget
           title="Escaneos del Mes"
@@ -241,7 +208,6 @@ export default function HRDashboard() {
         />
       </div>
 
-      {/* Insights departamentales */}
       {insightsPanelData.length > 0 && (
         <InsightPanel
           title="Insights por Departamento"
@@ -251,7 +217,6 @@ export default function HRDashboard() {
         />
       )}
 
-      {/* Tendencia de uso mensual */}
       {trendChartData.length > 1 && (
         <TrendChart
           title="Tendencia de Escaneos Mensuales"
@@ -262,7 +227,6 @@ export default function HRDashboard() {
         />
       )}
 
-      {/* Detalles de departamentos */}
       {departmentInsightsList.length > 0 && (
         <Card>
           <CardHeader>
@@ -315,7 +279,6 @@ export default function HRDashboard() {
         </Card>
       )}
 
-      {/* Empty state if no departments */}
       {departmentInsightsList.length === 0 && (
         <Card>
           <CardContent className="p-12 text-center">
