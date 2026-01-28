@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from dependencies.auth import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class UserProfileCreate(BaseModel):
-    user_id: str
+    user_id: str  # Changed from UUID to str
     organization_id: str
     department_id: Optional[str] = None
     full_name: Optional[str] = None
@@ -43,7 +43,8 @@ async def list_user_profiles(
     """List user profiles for the current user's organization"""
     try:
         # Get user's organization_id from user_profiles table first
-        user_query = select(UserProfile).where(UserProfile.user_id == current_user.id)
+        # Use string comparison for user_id (not UUID)
+        user_query = select(UserProfile).where(UserProfile.user_id == str(current_user.id))
         user_result = await db.execute(user_query)
         user_profile = user_result.scalar_one_or_none()
         
@@ -86,7 +87,7 @@ async def list_user_profiles(
             "items": [
                 {
                     "id": str(item.id),
-                    "user_id": str(item.user_id),
+                    "user_id": item.user_id,  # Already a string
                     "organization_id": str(item.organization_id),
                     "department_id": str(item.department_id) if item.department_id else None,
                     "full_name": item.full_name,
@@ -142,7 +143,7 @@ async def list_all_user_profiles(
             "items": [
                 {
                     "id": str(item.id),
-                    "user_id": str(item.user_id),
+                    "user_id": item.user_id,  # Already a string
                     "organization_id": str(item.organization_id),
                     "department_id": str(item.department_id) if item.department_id else None,
                     "full_name": item.full_name,
@@ -181,7 +182,7 @@ async def get_user_profile(
 
         return {
             "id": str(item.id),
-            "user_id": str(item.user_id),
+            "user_id": item.user_id,  # Already a string
             "organization_id": str(item.organization_id),
             "department_id": str(item.department_id) if item.department_id else None,
             "full_name": item.full_name,
@@ -207,10 +208,10 @@ async def create_user_profile(
 ):
     """Create a new user profile"""
     try:
-        # Create new profile
+        # Create new profile with string user_id
         new_profile = UserProfile(
-            id=UUID(data.user_id),
-            user_id=UUID(data.user_id),
+            id=uuid4(),
+            user_id=data.user_id,  # String, no UUID conversion
             organization_id=UUID(data.organization_id),
             department_id=UUID(data.department_id) if data.department_id else None,
             full_name=data.full_name,
@@ -225,7 +226,7 @@ async def create_user_profile(
 
         return {
             "id": str(new_profile.id),
-            "user_id": str(new_profile.user_id),
+            "user_id": new_profile.user_id,  # Already a string
             "organization_id": str(new_profile.organization_id),
             "department_id": str(new_profile.department_id) if new_profile.department_id else None,
             "full_name": new_profile.full_name,
@@ -271,7 +272,7 @@ async def update_user_profile(
 
         return {
             "id": str(profile.id),
-            "user_id": str(profile.user_id),
+            "user_id": profile.user_id,  # Already a string
             "organization_id": str(profile.organization_id),
             "department_id": str(profile.department_id) if profile.department_id else None,
             "full_name": profile.full_name,
