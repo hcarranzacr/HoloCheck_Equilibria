@@ -130,6 +130,49 @@ class Biometric_measurementsBatchDeleteRequest(BaseModel):
     ids: List[int]
 
 
+# ---------- NEW: Custom API endpoints for frontend ----------
+@router.get("/latest/{user_id}", response_model=Optional[Biometric_measurementsResponse])
+async def get_latest_measurement(
+    user_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the latest biometric measurement for a user"""
+    logger.debug(f"Fetching latest measurement for user_id: {user_id}")
+    
+    service = Biometric_measurementsService(db)
+    try:
+        result = await service.get_latest_by_user(user_id)
+        if not result:
+            logger.info(f"No measurements found for user {user_id}")
+            return None
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching latest measurement for user {user_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/history/{user_id}", response_model=List[Biometric_measurementsResponse])
+async def get_measurement_history(
+    user_id: str,
+    limit: int = Query(30, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get measurement history for a user (last N measurements)"""
+    logger.debug(f"Fetching measurement history for user_id: {user_id}, limit: {limit}")
+    
+    service = Biometric_measurementsService(db)
+    try:
+        results = await service.get_history_by_user(user_id, limit=limit)
+        logger.info(f"Found {len(results)} measurements for user {user_id}")
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching measurement history for user {user_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 # ---------- Routes ----------
 @router.get("", response_model=Biometric_measurementsListResponse)
 async def query_biometric_measurementss(

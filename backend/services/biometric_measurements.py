@@ -53,6 +53,43 @@ class Biometric_measurementsService:
             logger.error(f"Error fetching biometric_measurements {obj_id}: {str(e)}")
             raise
 
+    async def get_latest_by_user(self, user_id: str) -> Optional[Biometric_measurements]:
+        """Get the latest biometric measurement for a user"""
+        try:
+            query = (
+                select(Biometric_measurements)
+                .where(Biometric_measurements.user_id == user_id)
+                .order_by(Biometric_measurements.created_at.desc())
+                .limit(1)
+            )
+            result = await self.db.execute(query)
+            measurement = result.scalar_one_or_none()
+            if measurement:
+                logger.info(f"Found latest measurement for user {user_id}: id={measurement.id}")
+            else:
+                logger.info(f"No measurements found for user {user_id}")
+            return measurement
+        except Exception as e:
+            logger.error(f"Error fetching latest measurement for user {user_id}: {str(e)}")
+            raise
+
+    async def get_history_by_user(self, user_id: str, limit: int = 30) -> List[Biometric_measurements]:
+        """Get measurement history for a user (last N measurements)"""
+        try:
+            query = (
+                select(Biometric_measurements)
+                .where(Biometric_measurements.user_id == user_id)
+                .order_by(Biometric_measurements.created_at.desc())
+                .limit(limit)
+            )
+            result = await self.db.execute(query)
+            measurements = result.scalars().all()
+            logger.info(f"Found {len(measurements)} measurements in history for user {user_id}")
+            return list(measurements)
+        except Exception as e:
+            logger.error(f"Error fetching measurement history for user {user_id}: {str(e)}")
+            raise
+
     async def get_list(
         self, 
         skip: int = 0, 
