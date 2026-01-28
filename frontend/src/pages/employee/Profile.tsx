@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { User, Building2, Users, Mail, Calendar, Shield, Phone, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { User, Building2, Users, Mail, Calendar, Shield, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@metagptx/web-sdk';
+import { useToast } from '@/hooks/use-toast';
 
 const client = createClient();
 
@@ -24,105 +25,109 @@ interface UserProfile {
 interface Organization {
   id: string;
   name: string;
-  slug: string;
   industry?: string;
-  address?: string;
-  phone?: string;
+  size?: string;
 }
 
 interface Department {
   id: string;
   name: string;
   description?: string;
+  leader_id?: string;
 }
 
-export default function Profile() {
+interface Leader {
+  full_name: string;
+  email: string;
+}
+
+export default function EmployeeProfile() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [department, setDepartment] = useState<Department | null>(null);
-  const [authUser, setAuthUser] = useState<any>(null);
+  const [leader, setLeader] = useState<Leader | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadProfileData();
+    loadProfile();
   }, []);
 
-  const loadProfileData = async () => {
+  const loadProfile = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('👤 [Profile] Loading profile...');
 
-      // Get authenticated user
-      const user = await client.auth.me();
-      console.log('✅ [Profile] Auth user loaded:', user.data?.id);
-      setAuthUser(user.data);
+      // Get current user info
+      const userResponse = await client.auth.me();
+      console.log('✅ [Profile] User authenticated:', userResponse.data);
 
-      if (!user.data?.id) {
-        throw new Error('No authenticated user found');
+      if (!userResponse.data?.id) {
+        throw new Error('No se pudo obtener la información del usuario');
       }
 
-      // Get user profile from user_profiles table
+      const userId = userResponse.data.id;
+
+      // Get user profile from database
       const profileResponse = await client.apiCall.invoke({
-        url: '/api/v1/auth/me',
+        url: '/api/v1/user-profile',
         method: 'GET',
       });
 
-      console.log('✅ [Profile] Profile data loaded');
-
-      // Since we can't query user_profiles directly via entities, we'll use Supabase client
-      // Get full profile with organization and department info
-      const supabase = (window as any).supabaseClient;
-      if (!supabase) {
-        throw new Error('Supabase client not available');
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', user.data.id)
-        .single();
-
-      if (profileError) {
-        console.error('❌ [Profile] Error loading profile:', profileError);
-        throw profileError;
-      }
-
+      console.log('✅ [Profile] Profile loaded:', profileResponse.data);
+      const profileData = profileResponse.data;
       setProfile(profileData);
-      console.log('✅ [Profile] Profile set:', profileData);
 
-      // Load organization
+      // Get organization data
       if (profileData.organization_id) {
-        const { data: orgData, error: orgError } = await supabase
-          .from('organizations')
-          .select('*')
-          .eq('id', profileData.organization_id)
-          .single();
-
-        if (!orgError && orgData) {
-          setOrganization(orgData);
-          console.log('✅ [Profile] Organization loaded:', orgData.name);
+        try {
+          const orgResponse = await client.apiCall.invoke({
+            url: `/api/v1/organizations/${profileData.organization_id}`,
+            method: 'GET',
+          });
+          setOrganization(orgResponse.data);
+          console.log('✅ [Profile] Organization loaded:', orgResponse.data);
+        } catch (err) {
+          console.warn('⚠️ Could not load organization data:', err);
         }
       }
 
-      // Load department
+      // Get department data
       if (profileData.department_id) {
-        const { data: deptData, error: deptError } = await supabase
-          .from('departments')
-          .select('*')
-          .eq('id', profileData.department_id)
-          .single();
+        try {
+          const deptResponse = await client.apiCall.invoke({
+            url: `/api/v1/departments/${profileData.department_id}`,
+            method: 'GET',
+          });
+          setDepartment(deptResponse.data);
+          console.log('✅ [Profile] Department loaded:', deptResponse.data);
 
-        if (!deptError && deptData) {
-          setDepartment(deptData);
-          console.log('✅ [Profile] Department loaded:', deptData.name);
+          // Get leader data if available
+          if (deptResponse.data.leader_id) {
+            try {
+              const leaderResponse = await client.apiCall.invoke({
+                url: `/api/v1/users/${deptResponse.data.leader_id}`,
+                method: 'GET',
+              });
+              setLeader(leaderResponse.data);
+              console.log('✅ [Profile] Leader loaded:', leaderResponse.data);
+            } catch (err) {
+              console.warn('⚠️ Could not load leader data:', err);
+            }
+          }
+        } catch (err) {
+          console.warn('⚠️ Could not load department data:', err);
         }
       }
-    } catch (error: any) {
-      console.error('❌ [Profile] Error loading profile:', error);
+    } catch (err: any) {
+      console.error('❌ [Profile] Error loading profile:', err);
+      const errorMsg = err?.data?.detail || err?.response?.data?.detail || err.message || 'Error al cargar el perfil';
+      setError(errorMsg);
       toast({
         title: 'Error',
-        description: error?.data?.detail || error?.response?.data?.detail || error.message || 'Error al cargar el perfil',
+        description: errorMsg,
         variant: 'destructive',
       });
     } finally {
@@ -130,62 +135,95 @@ export default function Profile() {
     }
   };
 
+  const getRoleBadgeVariant = (role: string) => {
+    switch (role) {
+      case 'admin_org':
+        return 'default';
+      case 'hr':
+        return 'secondary';
+      case 'leader':
+        return 'outline';
+      default:
+        return 'secondary';
+    }
+  };
+
   const getRoleLabel = (role: string) => {
-    const roles: any = {
-      employee: 'Empleado',
-      leader: 'Líder de Equipo',
+    const labels: Record<string, string> = {
+      admin_org: 'Administrador',
       hr: 'Recursos Humanos',
-      admin_org: 'Administrador de Organización',
-      admin: 'Administrador de Plataforma',
+      leader: 'Líder de Equipo',
+      employee: 'Empleado',
     };
-    return roles[role] || role;
+    return labels[role] || role;
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'default';
+      case 'invited':
+        return 'secondary';
+      case 'inactive':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
   };
 
   const getStatusLabel = (status: string) => {
-    const statuses: any = {
+    const labels: Record<string, string> = {
       active: 'Activo',
       invited: 'Invitado',
       inactive: 'Inactivo',
-      suspended: 'Suspendido',
     };
-    return statuses[status] || status;
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: any = {
-      active: 'text-green-600 bg-green-50',
-      invited: 'text-yellow-600 bg-yellow-50',
-      inactive: 'text-gray-600 bg-gray-50',
-      suspended: 'text-red-600 bg-red-50',
-    };
-    return colors[status] || 'text-gray-600 bg-gray-50';
+    return labels[status] || status;
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">Cargando perfil...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando perfil...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-red-600">No se pudo cargar el perfil del usuario</div>
+      <div className="container mx-auto p-6">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>No se encontró información del perfil</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-6">
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Mi Perfil</h1>
-        <p className="text-muted-foreground mt-2">Información personal y de la organización</p>
+        <Badge variant={getStatusBadgeVariant(profile.status)}>
+          {getStatusLabel(profile.status)}
+        </Badge>
       </div>
 
       {/* Personal Information Card */}
-      <Card className="mb-6">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
@@ -195,101 +233,85 @@ export default function Profile() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Nombre Completo</Label>
+              <label className="text-sm font-medium text-muted-foreground">Nombre Completo</label>
               <p className="text-lg font-semibold mt-1">{profile.full_name}</p>
             </div>
-
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Correo Electrónico</Label>
+              <label className="text-sm font-medium text-muted-foreground">Correo Electrónico</label>
               <div className="flex items-center gap-2 mt-1">
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <p className="text-lg">{profile.email}</p>
               </div>
             </div>
-
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Rol</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Shield className="h-4 w-4 text-muted-foreground" />
-                <p className="text-lg font-semibold">{getRoleLabel(profile.role)}</p>
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Estado</Label>
+              <label className="text-sm font-medium text-muted-foreground">Rol</label>
               <div className="mt-1">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(profile.status)}`}>
-                  {getStatusLabel(profile.status)}
-                </span>
+                <Badge variant={getRoleBadgeVariant(profile.role)} className="text-sm">
+                  <Shield className="h-3 w-3 mr-1" />
+                  {getRoleLabel(profile.role)}
+                </Badge>
               </div>
             </div>
-
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Fecha de Registro</Label>
+              <label className="text-sm font-medium text-muted-foreground">Fecha de Registro</label>
               <div className="flex items-center gap-2 mt-1">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <p className="text-lg">{new Date(profile.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-lg">
+                  {new Date(profile.created_at).toLocaleDateString('es-ES', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </p>
               </div>
             </div>
-
-            {profile.last_login_at && (
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Último Acceso</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-lg">{new Date(profile.last_login_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-              </div>
-            )}
           </div>
+
+          {profile.last_login_at && (
+            <>
+              <Separator />
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Último Acceso</label>
+                <p className="text-sm mt-1">
+                  {new Date(profile.last_login_at).toLocaleString('es-ES', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
       {/* Organization Information Card */}
       {organization && (
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Información de la Organización
+              Organización
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">Nombre de la Empresa</Label>
+                <label className="text-sm font-medium text-muted-foreground">Empresa</label>
                 <p className="text-lg font-semibold mt-1">{organization.name}</p>
               </div>
-
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Identificador</Label>
-                <p className="text-lg mt-1">{organization.slug}</p>
-              </div>
-
               {organization.industry && (
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Industria</Label>
+                  <label className="text-sm font-medium text-muted-foreground">Industria</label>
                   <p className="text-lg mt-1">{organization.industry}</p>
                 </div>
               )}
-
-              {organization.address && (
+              {organization.size && (
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Dirección</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-lg">{organization.address}</p>
-                  </div>
-                </div>
-              )}
-
-              {organization.phone && (
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Teléfono</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-lg">{organization.phone}</p>
-                  </div>
+                  <label className="text-sm font-medium text-muted-foreground">Tamaño</label>
+                  <p className="text-lg mt-1">{organization.size}</p>
                 </div>
               )}
             </div>
@@ -303,50 +325,71 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Información del Departamento
+              Departamento
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">Departamento</Label>
+                <label className="text-sm font-medium text-muted-foreground">Nombre del Departamento</label>
                 <p className="text-lg font-semibold mt-1">{department.name}</p>
               </div>
-
               {department.description && (
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                  <label className="text-sm font-medium text-muted-foreground">Descripción</label>
                   <p className="text-lg mt-1">{department.description}</p>
                 </div>
               )}
             </div>
+
+            {leader && (
+              <>
+                <Separator />
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Líder del Departamento</label>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{leader.full_name}</p>
+                      <p className="text-sm text-muted-foreground">{leader.email}</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* User ID Information (for debugging) */}
-      <Card className="mt-6 border-dashed">
+      {/* System IDs Card (for debugging) */}
+      <Card className="border-dashed">
         <CardHeader>
-          <CardTitle className="text-sm text-muted-foreground">Información Técnica</CardTitle>
+          <CardTitle className="text-sm text-muted-foreground">Identificadores del Sistema</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
             <div>
-              <Label className="text-xs text-muted-foreground">ID de Usuario (Auth)</Label>
-              <p className="font-mono text-xs mt-1">{authUser?.id || 'N/A'}</p>
+              <label className="text-muted-foreground">User ID</label>
+              <p className="mt-1 break-all">{profile.user_id}</p>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">ID de Perfil</Label>
-              <p className="font-mono text-xs mt-1">{profile.id}</p>
+              <label className="text-muted-foreground">Profile ID</label>
+              <p className="mt-1 break-all">{profile.id}</p>
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">ID de Organización</Label>
-              <p className="font-mono text-xs mt-1">{profile.organization_id}</p>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">ID de Departamento</Label>
-              <p className="font-mono text-xs mt-1">{profile.department_id}</p>
-            </div>
+            {profile.organization_id && (
+              <div>
+                <label className="text-muted-foreground">Organization ID</label>
+                <p className="mt-1 break-all">{profile.organization_id}</p>
+              </div>
+            )}
+            {profile.department_id && (
+              <div>
+                <label className="text-muted-foreground">Department ID</label>
+                <p className="mt-1 break-all">{profile.department_id}</p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
