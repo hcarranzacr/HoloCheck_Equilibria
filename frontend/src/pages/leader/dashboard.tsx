@@ -1,67 +1,114 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { MetricCard, TeamMemberCard, InsightPanel, BiometricTable } from '@/components/dashboard';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useEffect, useState } from 'react';
+import { Users, TrendingUp, Activity, AlertCircle, Calendar } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Users, Activity, TrendingUp, AlertCircle, Brain, Battery } from 'lucide-react';
-import { toast } from 'sonner';
+import { createClient } from '@metagptx/web-sdk';
+import { useToast } from '@/hooks/use-toast';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
-interface LeaderDashboardData {
+const client = createClient();
+
+interface TeamMember {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+}
+
+interface BiometricScan {
+  id: string;
+  user_id: string;
+  created_at: string;
+  ai_stress?: number;
+  ai_fatigue?: number;
+  wellness_index_score?: number;
+  heart_rate?: number;
+}
+
+interface TeamMetrics {
+  avg_stress?: number;
+  avg_fatigue?: number;
+  avg_wellness?: number;
+  total_scans: number;
+}
+
+interface DashboardData {
   department_id: string;
+  organization_id: string;
   team_size: number;
-  team_members: any[];
-  recent_scans: any[];
-  team_metrics: {
-    avg_stress: number;
-    avg_fatigue: number;
-    avg_cognitive_load: number;
-    avg_recovery: number;
-    avg_wellness: number;
-    total_scans: number;
-  };
-  department_insights: any;
+  team_members: TeamMember[];
+  recent_scans: BiometricScan[];
+  team_metrics: TeamMetrics;
   total_scans: number;
 }
 
 export default function LeaderDashboard() {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<LeaderDashboardData | null>(null);
 
   useEffect(() => {
-    fetchDashboardData();
+    loadDashboard();
   }, []);
 
-  const fetchDashboardData = async () => {
+  const loadDashboard = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient.dashboards.leader();
-      setData(response);
-      console.log('✅ Leader dashboard data loaded:', response);
+      console.log('📊 [Leader Dashboard] Loading data...');
+
+      const response = await client.apiCall.invoke({
+        url: '/api/v1/dashboards/leader',
+        method: 'GET',
+      });
+
+      console.log('✅ [Leader Dashboard] Data loaded:', response.data);
+      setData(response.data);
     } catch (err: any) {
       console.error('❌ Error loading leader dashboard:', err);
-      setError(err.response?.data?.detail || err.message || 'Error al cargar datos del dashboard');
-      toast.error('Error al cargar dashboard');
+      const errorMsg =
+        err?.data?.detail || err?.response?.data?.detail || err.message || 'Error al cargar el dashboard';
+      setError(errorMsg);
+      toast({
+        title: 'Error',
+        description: errorMsg,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  const getStressLevel = (stress?: number) => {
+    if (!stress) return { label: 'N/A', variant: 'outline' as const };
+    if (stress < 30) return { label: 'Bajo', variant: 'default' as const };
+    if (stress < 60) return { label: 'Moderado', variant: 'secondary' as const };
+    return { label: 'Alto', variant: 'destructive' as const };
+  };
+
+  const getWellnessLevel = (wellness?: number) => {
+    if (!wellness) return { label: 'N/A', variant: 'outline' as const };
+    if (wellness >= 75) return { label: 'Excelente', variant: 'default' as const };
+    if (wellness >= 60) return { label: 'Bueno', variant: 'secondary' as const };
+    return { label: 'Requiere Atención', variant: 'destructive' as const };
+  };
+
   if (loading) {
     return (
-      <div className="container mx-auto p-6 space-y-6">
-        <Skeleton className="h-12 w-64 mb-6" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando dashboard...</p>
         </div>
-        <Skeleton className="h-64" />
       </div>
     );
   }
@@ -73,9 +120,6 @@ export default function LeaderDashboard() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button onClick={fetchDashboardData} className="mt-4">
-          Reintentar
-        </Button>
       </div>
     );
   }
@@ -84,162 +128,220 @@ export default function LeaderDashboard() {
     return (
       <div className="container mx-auto p-6">
         <Alert>
-          <AlertDescription>No hay datos disponibles para tu departamento</AlertDescription>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>No se encontraron datos del equipo</AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  const metrics = data.team_metrics || {};
-  const insights = data.department_insights;
+  // Safely get recent scans with fallback to empty array
+  const recentScans = data.recent_scans || [];
+  const teamMembers = data.team_members || [];
+  const teamMetrics = data.team_metrics || {};
 
-  // Prepare insights for InsightPanel
-  const insightsList = insights ? [
-    {
-      id: '1',
-      type: metrics.avg_stress > 60 ? 'danger' : metrics.avg_stress > 40 ? 'warning' : 'success' as any,
-      title: 'Nivel de Estrés del Equipo',
-      description: `El promedio de estrés del equipo es ${metrics.avg_stress?.toFixed(1)}%`,
-      metric: 'Estrés Promedio',
-      value: metrics.avg_stress
-    },
-    {
-      id: '2',
-      type: metrics.avg_fatigue > 60 ? 'danger' : metrics.avg_fatigue > 40 ? 'warning' : 'success' as any,
-      title: 'Nivel de Fatiga del Equipo',
-      description: `El promedio de fatiga del equipo es ${metrics.avg_fatigue?.toFixed(1)}%`,
-      metric: 'Fatiga Promedio',
-      value: metrics.avg_fatigue
-    },
-    {
-      id: '3',
-      type: insights.burnout_risk_score > 70 ? 'danger' : insights.burnout_risk_score > 40 ? 'warning' : 'info' as any,
-      title: 'Riesgo de Burnout',
-      description: insights.insight_summary || 'Monitoreo continuo del bienestar del equipo',
-      metric: 'Score de Riesgo',
-      value: insights.burnout_risk_score
-    }
-  ] : [];
+  // Get team members with recent scans
+  const membersWithScans = teamMembers.map((member) => {
+    const memberScans = recentScans.filter((scan) => scan.user_id === member.user_id);
+    const latestScan = memberScans.length > 0 ? memberScans[0] : null;
+    return {
+      ...member,
+      latestScan,
+      scanCount: memberScans.length,
+    };
+  });
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard del Equipo</h1>
-          <p className="text-muted-foreground">
-            {data.team_size} miembros • {data.total_scans} escaneos totales
-          </p>
-        </div>
-        <Button size="lg">
-          <Users className="mr-2 h-5 w-5" />
-          Gestionar Equipo
-        </Button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Dashboard de Líder</h1>
+        <Badge variant="outline" className="text-sm">
+          <Calendar className="h-3 w-3 mr-1" />
+          Últimos 30 días
+        </Badge>
       </div>
 
-      {/* Métricas del equipo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <MetricCard
-          title="Tamaño del Equipo"
-          value={data.team_size}
-          icon={Users}
-          status="neutral"
-          description="Miembros activos"
-        />
-        
-        <MetricCard
-          title="Estrés Promedio"
-          value={metrics.avg_stress?.toFixed(1) || 0}
-          unit="%"
-          icon={Brain}
-          status={metrics.avg_stress > 60 ? 'danger' : metrics.avg_stress > 40 ? 'warning' : 'success'}
-        />
-        
-        <MetricCard
-          title="Fatiga Promedio"
-          value={metrics.avg_fatigue?.toFixed(1) || 0}
-          unit="%"
-          icon={Battery}
-          status={metrics.avg_fatigue > 60 ? 'danger' : metrics.avg_fatigue > 40 ? 'warning' : 'success'}
-        />
-        
-        <MetricCard
-          title="Recuperación Promedio"
-          value={metrics.avg_recovery?.toFixed(1) || 0}
-          unit="%"
-          icon={TrendingUp}
-          status={metrics.avg_recovery < 40 ? 'danger' : metrics.avg_recovery < 70 ? 'warning' : 'success'}
-        />
-        
-        <MetricCard
-          title="Bienestar Promedio"
-          value={metrics.avg_wellness?.toFixed(1) || 0}
-          icon={Activity}
-          status="neutral"
-          description="Índice general"
-        />
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Tamaño del Equipo</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.team_size}</div>
+            <p className="text-xs text-muted-foreground">miembros activos</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Escaneos Totales</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.total_scans}</div>
+            <p className="text-xs text-muted-foreground">últimos 30 días</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Estrés Promedio</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {teamMetrics.avg_stress ? teamMetrics.avg_stress.toFixed(1) : 'N/A'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {teamMetrics.avg_stress && (
+                <Badge variant={getStressLevel(teamMetrics.avg_stress).variant} className="text-xs">
+                  {getStressLevel(teamMetrics.avg_stress).label}
+                </Badge>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Bienestar Promedio</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {teamMetrics.avg_wellness ? teamMetrics.avg_wellness.toFixed(1) : 'N/A'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {teamMetrics.avg_wellness && (
+                <Badge variant={getWellnessLevel(teamMetrics.avg_wellness).variant} className="text-xs">
+                  {getWellnessLevel(teamMetrics.avg_wellness).label}
+                </Badge>
+              )}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Insights departamentales */}
-      {insightsList.length > 0 && (
-        <InsightPanel
-          title="Insights del Departamento"
-          description="Análisis automático del bienestar del equipo"
-          insights={insightsList}
-        />
-      )}
-
-      {/* Miembros del equipo */}
+      {/* Team Members Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Miembros del Equipo</CardTitle>
-          <CardDescription>Estado de salud de cada colaborador</CardDescription>
+          <CardTitle>Estado del Equipo</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.team_members.map((member) => {
-              // Find latest scan for this member
-              const memberScans = data.recent_scans.filter(
-                scan => scan.user_id === member.user_id
-              );
-              const latestScan = memberScans[0];
-
-              return (
-                <TeamMemberCard
-                  key={member.user_id}
-                  member={{
-                    ...member,
-                    last_scan: latestScan ? {
-                      date: latestScan.created_at,
-                      stress: latestScan.ai_stress,
-                      fatigue: latestScan.ai_fatigue,
-                      wellness: latestScan.wellness_index_score
-                    } : undefined,
-                    status: latestScan ? 'active' : 'inactive'
-                  }}
-                  showDetails={true}
-                />
-              );
-            })}
-          </div>
+          {membersWithScans.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No hay miembros del equipo para mostrar
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>Escaneos</TableHead>
+                  <TableHead>Último Estrés</TableHead>
+                  <TableHead>Último Bienestar</TableHead>
+                  <TableHead>Última Medición</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {membersWithScans.map((member) => (
+                  <TableRow key={member.user_id}>
+                    <TableCell className="font-medium">{member.full_name}</TableCell>
+                    <TableCell>{member.email}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {member.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{member.scanCount}</TableCell>
+                    <TableCell>
+                      {member.latestScan?.ai_stress ? (
+                        <Badge variant={getStressLevel(member.latestScan.ai_stress).variant}>
+                          {member.latestScan.ai_stress.toFixed(1)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {member.latestScan?.wellness_index_score ? (
+                        <Badge variant={getWellnessLevel(member.latestScan.wellness_index_score).variant}>
+                          {member.latestScan.wellness_index_score.toFixed(1)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {member.latestScan ? (
+                        <span className="text-sm text-muted-foreground">
+                          {new Date(member.latestScan.created_at).toLocaleDateString('es-ES', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Sin datos</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      {/* Escaneos recientes del equipo */}
-      {data.recent_scans && data.recent_scans.length > 0 && (
-        <BiometricTable
-          title="Escaneos Recientes del Equipo"
-          description="Últimas mediciones biométricas del departamento"
-          measurements={data.recent_scans.map(scan => {
-            const member = data.team_members.find(m => m.user_id === scan.user_id);
-            return {
-              ...scan,
-              user_name: member?.full_name || 'Usuario'
-            };
-          })}
-          showUser={true}
-          maxRows={10}
-        />
+      {/* Recent Activity */}
+      {recentScans.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Actividad Reciente</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentScans.slice(0, 10).map((scan) => {
+                const member = teamMembers.find((m) => m.user_id === scan.user_id);
+                return (
+                  <div key={scan.id} className="flex items-center justify-between border-b pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Users className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{member?.full_name || 'Usuario desconocido'}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(scan.created_at).toLocaleString('es-ES', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {scan.ai_stress && (
+                        <Badge variant={getStressLevel(scan.ai_stress).variant}>
+                          Estrés: {scan.ai_stress.toFixed(1)}
+                        </Badge>
+                      )}
+                      {scan.wellness_index_score && (
+                        <Badge variant={getWellnessLevel(scan.wellness_index_score).variant}>
+                          Bienestar: {scan.wellness_index_score.toFixed(1)}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
