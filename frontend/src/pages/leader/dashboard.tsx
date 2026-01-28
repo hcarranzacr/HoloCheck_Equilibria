@@ -152,7 +152,7 @@ export default function LeaderDashboard() {
 
   const recentScans = data.recent_scans || [];
   const teamMembers = data.team_members || [];
-  const teamMetrics = data.team_metrics || {};
+  const teamMetrics: TeamMetrics = data.team_metrics || { total_scans: 0 };
 
   const membersWithScans = teamMembers.map((member) => {
     const memberScans = recentScans.filter((scan) => scan.user_id === member.user_id);
