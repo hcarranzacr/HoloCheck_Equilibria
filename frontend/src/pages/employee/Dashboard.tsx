@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Activity, TrendingUp, Calendar, Heart } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { Activity, TrendingUp, Calendar, Heart, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
 import BiometricGauge from '@/components/dashboard/BiometricGauge';
 import SectionHeader from '@/components/dashboard/SectionHeader';
@@ -11,6 +11,7 @@ import LoyaltyBenefitsIndicator from '@/components/dashboard/LoyaltyBenefitsIndi
 import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
 import { ALL_BIOMETRIC_INDICATORS, CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/all-biometric-indicators';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 interface DashboardData {
   user_profile: {
@@ -31,6 +32,7 @@ interface DashboardData {
 export default function EmployeeDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [ranges, setRanges] = useState<Record<string, Record<string, [number, number]>>>({});
 
   useEffect(() => {
@@ -38,56 +40,73 @@ export default function EmployeeDashboard() {
   }, []);
 
   async function loadDashboardData() {
+    const timestamp = new Date().toISOString();
+    console.log(`📊 [Employee Dashboard] START - Loading data at ${timestamp}`);
+    
     try {
       setLoading(true);
-      console.log('📊 [Employee Dashboard] Loading data...');
+      setError(null);
+      
+      console.log(`🔑 [Employee Dashboard] Checking authentication...`);
+      const session = await apiClient.auth.getSession();
+      console.log(`🔐 [Employee Dashboard] Session exists: ${!!session}, Token length: ${session?.access_token?.length || 0}`);
+      
+      if (!session?.access_token) {
+        throw new Error('No estás autenticado. Por favor, inicia sesión nuevamente.');
+      }
 
       // Fetch biometric indicator ranges
+      console.log(`📊 [Employee Dashboard] Step 1: Fetching biometric indicator ranges`);
       const rangesData = await apiClient.getBiometricIndicatorRanges();
       setRanges(rangesData);
-      console.log('✅ [Employee Dashboard] Ranges loaded:', rangesData);
+      console.log(`✅ [Employee Dashboard] Ranges loaded:`, Object.keys(rangesData).length, 'indicators');
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.error('User not authenticated:', userError);
-        return;
+      // Get current user
+      console.log(`👤 [Employee Dashboard] Step 2: Fetching current user`);
+      const user = await apiClient.auth.getUser();
+      if (!user) {
+        throw new Error('Usuario no encontrado');
       }
+      console.log(`✅ [Employee Dashboard] User found: ${user.email}`);
 
-      // Get user profile
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('full_name, email, departments(name)')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profileError) {
-        console.error('Error loading profile:', profileError);
-        return;
+      // Get user profile using apiClient
+      console.log(`📋 [Employee Dashboard] Step 3: Fetching user profile`);
+      const profileResponse = await apiClient.userProfiles.query({
+        query: { user_id: user.id },
+        limit: 1
+      });
+      
+      const profile = profileResponse.items?.[0];
+      if (!profile) {
+        throw new Error('Perfil de usuario no encontrado');
       }
+      console.log(`✅ [Employee Dashboard] Profile loaded: ${profile.full_name}`);
 
-      // Get latest scan
-      const { data: scans, error: scansError } = await supabase
-        .from('biometric_measurements')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Get user's biometric measurements
+      console.log(`📊 [Employee Dashboard] Step 4: Fetching biometric measurements`);
+      const measurementsResponse = await apiClient.measurements.query({
+        query: { user_id: user.id },
+        sort: '-created_at',
+        limit: 10
+      });
 
-      if (scansError) {
-        console.error('Error loading scans:', scansError);
-        return;
+      const scans = measurementsResponse.items || [];
+      console.log(`✅ [Employee Dashboard] Found ${scans.length} scans`);
+
+      const latestScan = scans[0] || null;
+      if (latestScan) {
+        console.log(`📋 [Employee Dashboard] Latest scan fields:`, Object.keys(latestScan));
       }
-
-      const latestScan = scans?.[0] || null;
 
       // Calculate trends
-      const avgStress = scans?.length > 0
+      console.log(`📈 [Employee Dashboard] Step 5: Calculating trends`);
+      const avgStress = scans.length > 0
         ? scans.reduce((acc, s) => acc + (s.ai_stress || 0), 0) / scans.length
         : 0;
-      const avgFatigue = scans?.length > 0
+      const avgFatigue = scans.length > 0
         ? scans.reduce((acc, s) => acc + (s.ai_fatigue || 0), 0) / scans.length
         : 0;
-      const avgRecovery = scans?.length > 0
+      const avgRecovery = scans.length > 0
         ? scans.reduce((acc, s) => acc + (s.ai_recovery || 0), 0) / scans.length
         : 0;
 
@@ -95,11 +114,11 @@ export default function EmployeeDashboard() {
         user_profile: {
           full_name: profile.full_name,
           email: profile.email,
-          department_name: Array.isArray(profile.departments) ? profile.departments[0]?.name : profile.departments?.name,
+          department_name: profile.department_name,
         },
         latest_scan: latestScan,
-        scan_history: scans || [],
-        total_scans: scans?.length || 0,
+        scan_history: scans,
+        total_scans: scans.length,
         trends: {
           avg_stress: avgStress,
           avg_fatigue: avgFatigue,
@@ -107,20 +126,44 @@ export default function EmployeeDashboard() {
         },
       };
 
-      console.log('✅ [Employee Dashboard] Data loaded:', dashboardData);
-      console.log('📋 [Employee Dashboard] Latest scan fields:', Object.keys(latestScan || {}));
+      console.log(`✅ [Employee Dashboard] SUCCESS - Data loaded`);
       setData(dashboardData);
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
+      
+    } catch (err: any) {
+      console.error(`❌ [Employee Dashboard] ERROR`);
+      console.error(`📛 [Employee Dashboard] Error:`, err);
+      
+      const errorMsg = err?.message || err?.data?.detail || err?.response?.data?.detail || 'Error al cargar el dashboard';
+      console.error(`📛 [Employee Dashboard] Error message: ${errorMsg}`);
+      
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
+      console.log(`🏁 [Employee Dashboard] Finished`);
     }
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Cargando dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-5">
+        <div className="max-w-7xl mx-auto">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
