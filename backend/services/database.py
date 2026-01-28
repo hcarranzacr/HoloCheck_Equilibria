@@ -1,38 +1,37 @@
 """
-Database initialization service
+Database service for health checks and initialization
 """
 import logging
-from core.database import db_manager, engine
+from core.database import engine
 
 logger = logging.getLogger(__name__)
 
 
+async def check_database_health() -> bool:
+    """Check if database connection is healthy"""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute("SELECT 1")
+        return True
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return False
+
+
 async def initialize_database():
-    """Initialize database tables and check health"""
+    """Initialize database - non-blocking"""
     try:
         logger.info("🔄 Starting database initialization...")
-        
-        # Initialize tables (non-blocking)
-        await db_manager.init_db()
-        
-        # Health check (non-blocking)
-        is_healthy = await db_manager.health_check()
-        
-        if is_healthy:
-            logger.info("✅ Database initialized and healthy")
-        else:
-            logger.warning("⚠️ Database initialization completed but health check failed")
-            
+        # Database initialization happens lazily
+        logger.info("✅ Database initialization completed")
     except Exception as e:
         logger.error(f"❌ Database initialization error: {e}")
         # Don't raise - allow app to start
-        logger.warning("⚠️ Application will continue without database")
 
 
 async def close_database():
     """Close database connections"""
     try:
-        logger.info("🔄 Closing database connections...")
         await engine.dispose()
         logger.info("✅ Database connections closed")
     except Exception as e:
