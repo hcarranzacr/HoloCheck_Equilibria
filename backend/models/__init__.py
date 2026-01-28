@@ -5,7 +5,7 @@ from core.database import Base
 
 # Import all models so they are registered with Base.metadata
 from models.user_profiles import UserProfile
-from models.organizations import Organization
+from models.organizations import Organizations
 from models.departments import Department
 from models.biometric_measurements import Biometric_measurements
 from models.ai_analysis_logs import Ai_analysis_logs
@@ -31,7 +31,7 @@ from models.recommendations import Recommendation
 __all__ = [
     "Base",
     "UserProfile",
-    "Organization",
+    "Organizations",
     "Department",
     "Biometric_measurements",
     "Ai_analysis_logs",
