@@ -7,9 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from models.user_profiles import UserProfile
 from pydantic import BaseModel
 from schemas.auth import UserResponse
-from services.user_profiles import UserProfileService
-from services.audit_service import AuditService
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
@@ -43,48 +41,71 @@ async def list_user_profiles(
     db: AsyncSession = Depends(get_db),
 ):
     """List user profiles for the current user's organization"""
-    query = select(UserProfile).where(UserProfile.organization_id == current_user.organization_id)
-
-    # Apply sorting
-    if sort.startswith("-"):
-        order_field = sort[1:]
-        query = query.order_by(getattr(UserProfile, order_field).desc())
-    else:
-        query = query.order_by(getattr(UserProfile, sort).asc())
-
-    # Get total count
-    count_query = (
-        select(func.count())
-        .select_from(UserProfile)
-        .where(UserProfile.organization_id == current_user.organization_id)
-    )
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
-
-    # Apply pagination
-    query = query.offset(skip).limit(limit)
-
-    result = await db.execute(query)
-    items = result.scalars().all()
-
-    return {
-        "items": [
-            {
-                "id": str(item.id),
-                "user_id": item.user_id,
-                "organization_id": str(item.organization_id),
-                "department_id": str(item.department_id) if item.department_id else None,
-                "full_name": item.full_name,
-                "email": item.email,
-                "role": item.role,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
+    try:
+        # Get user's organization_id from user_profiles table first
+        user_query = select(UserProfile).where(UserProfile.user_id == current_user.id)
+        user_result = await db.execute(user_query)
+        user_profile = user_result.scalar_one_or_none()
+        
+        if not user_profile or not user_profile.organization_id:
+            logger.warning(f"User {current_user.id} has no organization_id")
+            return {
+                "items": [],
+                "total": 0,
+                "skip": skip,
+                "limit": limit,
             }
-            for item in items
-        ],
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+        
+        organization_id = user_profile.organization_id
+        
+        query = select(UserProfile).where(UserProfile.organization_id == organization_id)
+
+        # Apply sorting
+        if sort.startswith("-"):
+            order_field = sort[1:]
+            query = query.order_by(getattr(UserProfile, order_field).desc())
+        else:
+            query = query.order_by(getattr(UserProfile, sort).asc())
+
+        # Get total count
+        count_query = (
+            select(func.count())
+            .select_from(UserProfile)
+            .where(UserProfile.organization_id == organization_id)
+        )
+        total_result = await db.execute(count_query)
+        total = total_result.scalar()
+
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+
+        result = await db.execute(query)
+        items = result.scalars().all()
+
+        return {
+            "items": [
+                {
+                    "id": str(item.id),
+                    "user_id": str(item.user_id),
+                    "organization_id": str(item.organization_id),
+                    "department_id": str(item.department_id) if item.department_id else None,
+                    "full_name": item.full_name,
+                    "email": item.email,
+                    "role": item.role,
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                }
+                for item in items
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
+    except Exception as e:
+        logger.error(f"Error listing user profiles: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list user profiles: {str(e)}"
+        )
 
 
 @router.get("/all")
@@ -96,44 +117,51 @@ async def list_all_user_profiles(
     db: AsyncSession = Depends(get_db),
 ):
     """List all user profiles (admin only)"""
-    query = select(UserProfile)
+    try:
+        query = select(UserProfile)
 
-    # Apply sorting
-    if sort.startswith("-"):
-        order_field = sort[1:]
-        query = query.order_by(getattr(UserProfile, order_field).desc())
-    else:
-        query = query.order_by(getattr(UserProfile, sort).asc())
+        # Apply sorting
+        if sort.startswith("-"):
+            order_field = sort[1:]
+            query = query.order_by(getattr(UserProfile, order_field).desc())
+        else:
+            query = query.order_by(getattr(UserProfile, sort).asc())
 
-    # Get total count
-    count_query = select(func.count()).select_from(UserProfile)
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
+        # Get total count
+        count_query = select(func.count()).select_from(UserProfile)
+        total_result = await db.execute(count_query)
+        total = total_result.scalar()
 
-    # Apply pagination
-    query = query.offset(skip).limit(limit)
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
 
-    result = await db.execute(query)
-    items = result.scalars().all()
+        result = await db.execute(query)
+        items = result.scalars().all()
 
-    return {
-        "items": [
-            {
-                "id": str(item.id),
-                "user_id": item.user_id,
-                "organization_id": str(item.organization_id),
-                "department_id": str(item.department_id) if item.department_id else None,
-                "full_name": item.full_name,
-                "email": item.email,
-                "role": item.role,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-            }
-            for item in items
-        ],
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+        return {
+            "items": [
+                {
+                    "id": str(item.id),
+                    "user_id": str(item.user_id),
+                    "organization_id": str(item.organization_id),
+                    "department_id": str(item.department_id) if item.department_id else None,
+                    "full_name": item.full_name,
+                    "email": item.email,
+                    "role": item.role,
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                }
+                for item in items
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
+    except Exception as e:
+        logger.error(f"Error listing all user profiles: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list all user profiles: {str(e)}"
+        )
 
 
 @router.get("/{profile_id}")
@@ -143,23 +171,32 @@ async def get_user_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a user profile by ID"""
-    query = select(UserProfile).where(UserProfile.id == profile_id)
-    result = await db.execute(query)
-    item = result.scalar_one_or_none()
+    try:
+        query = select(UserProfile).where(UserProfile.id == profile_id)
+        result = await db.execute(query)
+        item = result.scalar_one_or_none()
 
-    if not item:
-        raise HTTPException(status_code=404, detail="User profile not found")
+        if not item:
+            raise HTTPException(status_code=404, detail="User profile not found")
 
-    return {
-        "id": str(item.id),
-        "user_id": item.user_id,
-        "organization_id": str(item.organization_id),
-        "department_id": str(item.department_id) if item.department_id else None,
-        "full_name": item.full_name,
-        "email": item.email,
-        "role": item.role,
-        "created_at": item.created_at.isoformat() if item.created_at else None,
-    }
+        return {
+            "id": str(item.id),
+            "user_id": str(item.user_id),
+            "organization_id": str(item.organization_id),
+            "department_id": str(item.department_id) if item.department_id else None,
+            "full_name": item.full_name,
+            "email": item.email,
+            "role": item.role,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user profile: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get user profile: {str(e)}"
+        )
 
 
 @router.post("")
@@ -169,34 +206,40 @@ async def create_user_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new user profile"""
-    service = UserProfileService(db)
-    profile = await service.create_user_profile(data.dict())
-
-    # Audit logging
     try:
-        await AuditService.log_crud_operation(
-            db=db,
-            actor_user_id=str(current_user.id),
-            action="create",
-            entity_type="user_profiles",
-            entity_id=str(profile.id),
-            new_data=data.dict(),
-            organization_id=str(profile.organization_id),
-            role=current_user.role,
+        # Create new profile
+        new_profile = UserProfile(
+            id=UUID(data.user_id),
+            user_id=UUID(data.user_id),
+            organization_id=UUID(data.organization_id),
+            department_id=UUID(data.department_id) if data.department_id else None,
+            full_name=data.full_name,
+            email=data.email,
+            role=data.role,
+            created_at=datetime.utcnow()
         )
-    except Exception as audit_error:
-        logger.error(f"Audit logging failed: {audit_error}")
+        
+        db.add(new_profile)
+        await db.commit()
+        await db.refresh(new_profile)
 
-    return {
-        "id": str(profile.id),
-        "user_id": profile.user_id,
-        "organization_id": str(profile.organization_id),
-        "department_id": str(profile.department_id) if profile.department_id else None,
-        "full_name": profile.full_name,
-        "email": profile.email,
-        "role": profile.role,
-        "created_at": profile.created_at.isoformat() if profile.created_at else None,
-    }
+        return {
+            "id": str(new_profile.id),
+            "user_id": str(new_profile.user_id),
+            "organization_id": str(new_profile.organization_id),
+            "department_id": str(new_profile.department_id) if new_profile.department_id else None,
+            "full_name": new_profile.full_name,
+            "email": new_profile.email,
+            "role": new_profile.role,
+            "created_at": new_profile.created_at.isoformat() if new_profile.created_at else None,
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating user profile: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create user profile: {str(e)}"
+        )
 
 
 @router.put("/{profile_id}")
@@ -207,46 +250,44 @@ async def update_user_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a user profile"""
-    service = UserProfileService(db)
-    
-    # Get old data before update
-    query = select(UserProfile).where(UserProfile.id == profile_id)
-    result = await db.execute(query)
-    old_profile = result.scalar_one_or_none()
-    
-    if not old_profile:
-        raise HTTPException(status_code=404, detail="User profile not found")
-    
-    old_data = {k: v for k, v in old_profile.__dict__.items() if not k.startswith('_')}
-    
-    profile = await service.update_user_profile(UUID(profile_id), data.dict(exclude_unset=True))
-
-    # Audit logging
     try:
-        await AuditService.log_crud_operation(
-            db=db,
-            actor_user_id=str(current_user.id),
-            action="update",
-            entity_type="user_profiles",
-            entity_id=profile_id,
-            old_data=old_data,
-            new_data=data.dict(exclude_unset=True),
-            organization_id=str(profile.organization_id),
-            role=current_user.role,
-        )
-    except Exception as audit_error:
-        logger.error(f"Audit logging failed: {audit_error}")
+        query = select(UserProfile).where(UserProfile.id == profile_id)
+        result = await db.execute(query)
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        # Update fields
+        if data.department_id is not None:
+            profile.department_id = UUID(data.department_id) if data.department_id else None
+        if data.full_name is not None:
+            profile.full_name = data.full_name
+        if data.role is not None:
+            profile.role = data.role
+        
+        await db.commit()
+        await db.refresh(profile)
 
-    return {
-        "id": str(profile.id),
-        "user_id": profile.user_id,
-        "organization_id": str(profile.organization_id),
-        "department_id": str(profile.department_id) if profile.department_id else None,
-        "full_name": profile.full_name,
-        "email": profile.email,
-        "role": profile.role,
-        "created_at": profile.created_at.isoformat() if profile.created_at else None,
-    }
+        return {
+            "id": str(profile.id),
+            "user_id": str(profile.user_id),
+            "organization_id": str(profile.organization_id),
+            "department_id": str(profile.department_id) if profile.department_id else None,
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "role": profile.role,
+            "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating user profile: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update user profile: {str(e)}"
+        )
 
 
 @router.delete("/{profile_id}")
@@ -256,33 +297,24 @@ async def delete_user_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a user profile"""
-    service = UserProfileService(db)
-    
-    # Get old data before delete
-    query = select(UserProfile).where(UserProfile.id == profile_id)
-    result = await db.execute(query)
-    old_profile = result.scalar_one_or_none()
-    
-    if not old_profile:
-        raise HTTPException(status_code=404, detail="User profile not found")
-    
-    old_data = {k: v for k, v in old_profile.__dict__.items() if not k.startswith('_')}
-    
-    success = await service.delete_user_profile(UUID(profile_id))
-
-    # Audit logging
     try:
-        await AuditService.log_crud_operation(
-            db=db,
-            actor_user_id=str(current_user.id),
-            action="delete",
-            entity_type="user_profiles",
-            entity_id=profile_id,
-            old_data=old_data,
-            organization_id=str(old_profile.organization_id),
-            role=current_user.role,
-        )
-    except Exception as audit_error:
-        logger.error(f"Audit logging failed: {audit_error}")
+        query = select(UserProfile).where(UserProfile.id == profile_id)
+        result = await db.execute(query)
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        await db.delete(profile)
+        await db.commit()
 
-    return {"message": "User profile deleted successfully"}
+        return {"message": "User profile deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting user profile: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete user profile: {str(e)}"
+        )

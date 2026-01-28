@@ -1,27 +1,19 @@
-from datetime import datetime
-from typing import Optional
-
+"""
+Authentication schemas
+"""
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
 
 
 class UserResponse(BaseModel):
-    id: str  # Now a string UUID (platform sub)
+    """User response from authentication"""
+    id: str
     email: str
-    name: Optional[str] = None
-    role: str = "user"  # user/admin
-    last_login: Optional[datetime] = None
-
+    user_metadata: Dict[str, Any] = {}
+    app_metadata: Dict[str, Any] = {}
+    created_at: str = ""
+    organization_id: Optional[str] = None  # Added for user_profiles router
+    role: Optional[str] = None  # Added for audit logging
+    
     class Config:
         from_attributes = True
-
-
-class PlatformTokenExchangeRequest(BaseModel):
-    """Request body for exchanging Platform token for app token."""
-
-    platform_token: str
-
-
-class TokenExchangeResponse(BaseModel):
-    """Response body for issued application token."""
-
-    token: str
