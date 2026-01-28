@@ -5,71 +5,59 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
+import { Progress } from '@/components/ui/progress';
+import {
   CreditCard,
   Users,
   Activity,
   TrendingUp,
+  TrendingDown,
   Calendar,
   BarChart3,
   AlertTriangle,
   RefreshCw,
-  Clock
+  Clock,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
-interface UsageSummary {
-  month: string;
-  total_scans: number;
-  total_ai_analyses: number;
-  total_credits_used: number;
-  unique_users: number;
+interface OrganizationSubscription {
+  id: string;
+  organization_id: string;
+  subscription_plan_id: string;
+  start_date: string;
+  end_date: string;
+  active: boolean;
+  scan_limit_per_user_month: number;
+  used_scans_total: number;
+  used_dept_analyses: number;
+  used_org_analyses: number;
+  dept_analysis_limit: number;
+  org_analysis_limit: number;
+  current_month: string;
 }
 
-interface LatestScanByUser {
-  user_id: string;
-  full_name: string;
-  last_scan_date: string;
-  scan_count: number;
-  total_credits_used: number;
+interface OrganizationUsageSummary {
+  id: string;
+  organization_id: string;
+  month: string;
+  total_ai_tokens_used: number;
+  total_scans: number;
+  total_prompts_used: number;
+  total_user_scans: number;
+  total_valid_scans: number;
+  total_invalid_scans: number;
 }
 
 interface UserScanUsage {
   user_id: string;
   full_name: string;
+  email: string;
   department_name: string;
   total_scans: number;
   last_scan_date: string;
-}
-
-interface SubscriptionUsageLog {
-  id: number;
-  organization_id: number;
-  action_type: string;
-  credits_used: number;
-  user_id: string;
-  created_at: string;
-}
-
-interface OrganizationUsageSummary {
-  organization_id: number;
-  organization_name: string;
-  total_scans: number;
-  total_ai_analyses: number;
-  total_credits_used: number;
-  active_users: number;
-}
-
-interface OrganizationSubscription {
-  id: number;
-  organization_id: number;
-  plan_name: string;
-  status: string;
-  credits_remaining: number;
-  credits_total: number;
-  start_date: string;
-  end_date: string;
 }
 
 // Centralized logging function
@@ -92,12 +80,10 @@ async function logActivity(action: string, details: any, level: 'info' | 'warnin
 }
 
 export default function OrgDashboard() {
-  const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([]);
-  const [latestScans, setLatestScans] = useState<LatestScanByUser[]>([]);
-  const [userUsage, setUserUsage] = useState<UserScanUsage[]>([]);
-  const [usageLogs, setUsageLogs] = useState<SubscriptionUsageLog[]>([]);
-  const [orgSummary, setOrgSummary] = useState<OrganizationUsageSummary | null>(null);
   const [subscription, setSubscription] = useState<OrganizationSubscription | null>(null);
+  const [usageSummaries, setUsageSummaries] = useState<OrganizationUsageSummary[]>([]);
+  const [currentMonthUsage, setCurrentMonthUsage] = useState<OrganizationUsageSummary | null>(null);
+  const [userUsage, setUserUsage] = useState<UserScanUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -114,7 +100,6 @@ export default function OrgDashboard() {
         throw new Error('User not authenticated');
       }
 
-      // Get user's organization
       const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select('organization_id')
@@ -130,103 +115,73 @@ export default function OrgDashboard() {
       const orgId = profile.organization_id;
       console.log('✅ [Org Admin Dashboard] User organization:', orgId);
 
-      // Load monthly usage summary from view
-      const { data: summaryData, error: summaryError } = await supabase
-        .from('vw_usage_monthly_summary')
-        .select('*')
-        .eq('organization_id', orgId)
-        .order('month', { ascending: false })
-        .limit(6);
-
-      if (summaryError) {
-        console.error('❌ [Org Admin Dashboard] Error loading usage summary:', summaryError);
-        await logActivity('usage_summary_load_error', { error: summaryError.message }, 'error');
-      } else {
-        setUsageSummary(summaryData || []);
-        console.log('✅ [Org Admin Dashboard] Usage summary loaded:', summaryData?.length);
-        await logActivity('usage_summary_loaded', { count: summaryData?.length }, 'info');
-      }
-
-      // Load latest scans by user from view
-      const { data: scansData, error: scansError } = await supabase
-        .from('vw_latest_scans_by_user')
-        .select('*')
-        .order('last_scan_date', { ascending: false })
-        .limit(10);
-
-      if (scansError) {
-        console.error('❌ [Org Admin Dashboard] Error loading latest scans:', scansError);
-        await logActivity('latest_scans_load_error', { error: scansError.message }, 'error');
-      } else {
-        setLatestScans(scansData || []);
-        console.log('✅ [Org Admin Dashboard] Latest scans loaded:', scansData?.length);
-        await logActivity('latest_scans_loaded', { count: scansData?.length }, 'info');
-      }
-
-      // Load user scan usage
-      const { data: userUsageData, error: userUsageError } = await supabase
-        .from('user_scan_usage')
-        .select('*')
-        .order('total_scans', { ascending: false })
-        .limit(10);
-
-      if (userUsageError) {
-        console.error('❌ [Org Admin Dashboard] Error loading user usage:', userUsageError);
-        await logActivity('user_usage_load_error', { error: userUsageError.message }, 'error');
-      } else {
-        setUserUsage(userUsageData || []);
-        console.log('✅ [Org Admin Dashboard] User usage loaded:', userUsageData?.length);
-        await logActivity('user_usage_loaded', { count: userUsageData?.length }, 'info');
-      }
-
-      // Load subscription usage logs
-      const { data: logsData, error: logsError } = await supabase
-        .from('subscription_usage_logs')
-        .select('*')
-        .eq('organization_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (logsError) {
-        console.error('❌ [Org Admin Dashboard] Error loading usage logs:', logsError);
-        await logActivity('usage_logs_load_error', { error: logsError.message }, 'error');
-      } else {
-        setUsageLogs(logsData || []);
-        console.log('✅ [Org Admin Dashboard] Usage logs loaded:', logsData?.length);
-        await logActivity('usage_logs_loaded', { count: logsData?.length }, 'info');
-      }
-
-      // Load organization usage summary
-      const { data: orgData, error: orgError } = await supabase
-        .from('organization_usage_summary')
-        .select('*')
-        .eq('organization_id', orgId)
-        .single();
-
-      if (orgError) {
-        console.error('❌ [Org Admin Dashboard] Error loading org summary:', orgError);
-        await logActivity('org_summary_load_error', { error: orgError.message }, 'error');
-      } else {
-        setOrgSummary(orgData);
-        console.log('✅ [Org Admin Dashboard] Org summary loaded:', orgData);
-        await logActivity('org_summary_loaded', { organization_id: orgId }, 'info');
-      }
-
       // Load organization subscription
       const { data: subData, error: subError } = await supabase
         .from('organization_subscriptions')
         .select('*')
         .eq('organization_id', orgId)
-        .eq('status', 'active')
+        .eq('active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
       if (subError) {
-        console.error('❌ [Org Admin Dashboard] Error loading subscription:', subError);
-        await logActivity('subscription_load_error', { error: subError.message }, 'error');
+        console.error('⚠️ [Org Admin Dashboard] No active subscription found:', subError);
+        await logActivity('subscription_load_warning', { error: subError.message }, 'warning');
       } else {
         setSubscription(subData);
         console.log('✅ [Org Admin Dashboard] Subscription loaded:', subData);
-        await logActivity('subscription_loaded', { plan: subData?.plan_name }, 'info');
+        await logActivity('subscription_loaded', { subscription_id: subData.id }, 'info');
+      }
+
+      // Load usage summaries (last 6 months)
+      const { data: summariesData, error: summariesError } = await supabase
+        .from('organization_usage_summary')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('month', { ascending: false })
+        .limit(6);
+
+      if (summariesError) {
+        console.error('⚠️ [Org Admin Dashboard] Error loading usage summaries:', summariesError);
+        await logActivity('summaries_load_warning', { error: summariesError.message }, 'warning');
+      } else {
+        setUsageSummaries(summariesData || []);
+        if (summariesData && summariesData.length > 0) {
+          setCurrentMonthUsage(summariesData[0]);
+        }
+        console.log('✅ [Org Admin Dashboard] Usage summaries loaded:', summariesData?.length);
+        await logActivity('summaries_loaded', { count: summariesData?.length }, 'info');
+      }
+
+      // Load user scan usage
+      const { data: usageData, error: usageError } = await supabase
+        .from('user_scan_usage')
+        .select(`
+          user_id,
+          total_scans,
+          last_scan_date,
+          user_profiles!inner(full_name, email, departments(name))
+        `)
+        .order('total_scans', { ascending: false })
+        .limit(20);
+
+      if (usageError) {
+        console.error('⚠️ [Org Admin Dashboard] Error loading user usage:', usageError);
+        await logActivity('user_usage_load_warning', { error: usageError.message }, 'warning');
+      } else {
+        const formattedUsage = usageData?.map(item => ({
+          user_id: item.user_id,
+          full_name: (item.user_profiles as any)?.full_name || 'Unknown',
+          email: (item.user_profiles as any)?.email || '',
+          department_name: (item.user_profiles as any)?.departments?.name || 'N/A',
+          total_scans: item.total_scans,
+          last_scan_date: item.last_scan_date
+        })) || [];
+        
+        setUserUsage(formattedUsage);
+        console.log('✅ [Org Admin Dashboard] User usage loaded:', formattedUsage.length);
+        await logActivity('user_usage_loaded', { count: formattedUsage.length }, 'info');
       }
 
       await logActivity('dashboard_load_complete', { dashboard: 'org_admin' }, 'info');
@@ -253,18 +208,18 @@ export default function OrgDashboard() {
     loadDashboardData();
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'active': return 'default';
-      case 'expired': return 'destructive';
-      case 'suspended': return 'warning';
-      default: return 'secondary';
-    }
+  const getDaysRemaining = () => {
+    if (!subscription) return 0;
+    const endDate = new Date(subscription.end_date);
+    const today = new Date();
+    const diffTime = endDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
   };
 
-  const getUsagePercentage = () => {
-    if (!subscription) return 0;
-    return ((subscription.credits_total - subscription.credits_remaining) / subscription.credits_total) * 100;
+  const getUsagePercentage = (used: number, limit: number) => {
+    if (!limit) return 0;
+    return Math.min((used / limit) * 100, 100);
   };
 
   if (loading) {
@@ -310,12 +265,14 @@ export default function OrgDashboard() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Organization Dashboard</h1>
-          <p className="text-muted-foreground">Usage and subscription management</p>
+          <h1 className="text-3xl font-bold">Dashboard de Administración</h1>
+          <p className="text-muted-foreground">
+            Uso del sistema y gestión de suscripción
+          </p>
         </div>
         <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
           <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          Actualizar
         </Button>
       </div>
 
@@ -324,121 +281,172 @@ export default function OrgDashboard() {
         <Card className="border-primary">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Current Subscription</span>
-              <Badge variant={getStatusColor(subscription.status)}>
-                {subscription.status}
+              <span className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                Suscripción Activa
+              </span>
+              <Badge variant={subscription.active ? 'default' : 'destructive'}>
+                {subscription.active ? 'Activa' : 'Inactiva'}
               </Badge>
             </CardTitle>
-            <CardDescription>{subscription.plan_name}</CardDescription>
+            <CardDescription>
+              Vigencia: {new Date(subscription.start_date).toLocaleDateString()} - {new Date(subscription.end_date).toLocaleDateString()}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Credits Remaining</span>
-                <span className="text-2xl font-bold">
-                  {subscription.credits_remaining.toLocaleString()} / {subscription.credits_total.toLocaleString()}
-                </span>
-              </div>
-              <div className="w-full bg-secondary rounded-full h-2">
-                <div 
-                  className="bg-primary h-2 rounded-full transition-all"
-                  style={{ width: `${getUsagePercentage()}%` }}
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Días restantes</span>
+              <span className="text-2xl font-bold">{getDaysRemaining()}</span>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Escaneos utilizados</span>
+                  <span className="font-medium">
+                    {subscription.used_scans_total} / {subscription.scan_limit_per_user_month || '∞'}
+                  </span>
+                </div>
+                <Progress 
+                  value={getUsagePercentage(subscription.used_scans_total, subscription.scan_limit_per_user_month)} 
                 />
               </div>
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Valid from {new Date(subscription.start_date).toLocaleDateString()}</span>
-                <span>Until {new Date(subscription.end_date).toLocaleDateString()}</span>
-              </div>
+
+              {subscription.dept_analysis_limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Análisis departamentales</span>
+                    <span className="font-medium">
+                      {subscription.used_dept_analyses} / {subscription.dept_analysis_limit}
+                    </span>
+                  </div>
+                  <Progress 
+                    value={getUsagePercentage(subscription.used_dept_analyses, subscription.dept_analysis_limit)} 
+                  />
+                </div>
+              )}
+
+              {subscription.org_analysis_limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Análisis organizacionales</span>
+                    <span className="font-medium">
+                      {subscription.used_org_analyses} / {subscription.org_analysis_limit}
+                    </span>
+                  </div>
+                  <Progress 
+                    value={getUsagePercentage(subscription.used_org_analyses, subscription.org_analysis_limit)} 
+                  />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Scans</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{orgSummary?.total_scans || 0}</div>
-            <p className="text-xs text-muted-foreground">All time</p>
-          </CardContent>
-        </Card>
+      {/* Current Month Usage */}
+      {currentMonthUsage && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Escaneos Este Mes</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{currentMonthUsage.total_scans}</div>
+              <p className="text-xs text-muted-foreground">
+                {currentMonthUsage.total_user_scans} por usuarios
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI Analyses</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{orgSummary?.total_ai_analyses || 0}</div>
-            <p className="text-xs text-muted-foreground">Generated</p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tokens IA Usados</CardTitle>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{currentMonthUsage.total_ai_tokens_used}</div>
+              <p className="text-xs text-muted-foreground">
+                {currentMonthUsage.total_prompts_used} prompts
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Credits Used</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{orgSummary?.total_credits_used || 0}</div>
-            <p className="text-xs text-muted-foreground">Total consumed</p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Escaneos Válidos</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{currentMonthUsage.total_valid_scans}</div>
+              <p className="text-xs text-muted-foreground">
+                {currentMonthUsage.total_scans > 0 
+                  ? ((currentMonthUsage.total_valid_scans / currentMonthUsage.total_scans) * 100).toFixed(1)
+                  : 0}% tasa de éxito
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{orgSummary?.active_users || 0}</div>
-            <p className="text-xs text-muted-foreground">Using the system</p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Escaneos Inválidos</CardTitle>
+              <XCircle className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{currentMonthUsage.total_invalid_scans}</div>
+              <p className="text-xs text-muted-foreground">
+                Requieren revisión
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="monthly" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="monthly">Monthly Usage</TabsTrigger>
-          <TabsTrigger value="users">User Activity</TabsTrigger>
-          <TabsTrigger value="logs">Usage Logs</TabsTrigger>
+          <TabsTrigger value="monthly">Uso Mensual</TabsTrigger>
+          <TabsTrigger value="users">Uso por Usuario</TabsTrigger>
         </TabsList>
 
         <TabsContent value="monthly" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Monthly Usage Summary</CardTitle>
-              <CardDescription>Last 6 months of usage data</CardDescription>
+              <CardTitle>Resumen Mensual</CardTitle>
+              <CardDescription>Últimos 6 meses de uso del sistema</CardDescription>
             </CardHeader>
             <CardContent>
-              {usageSummary.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No usage data available</p>
+              {usageSummaries.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No hay datos de uso disponibles</p>
               ) : (
                 <div className="space-y-4">
-                  {usageSummary.map((month, idx) => (
-                    <div key={idx} className="flex items-center justify-between border-b pb-4 last:border-0">
+                  {usageSummaries.map((summary) => (
+                    <div key={summary.id} className="flex items-center justify-between border-b pb-4 last:border-0">
                       <div className="space-y-1">
-                        <p className="font-medium">
-                          <Calendar className="inline h-4 w-4 mr-2" />
-                          {month.month}
+                        <p className="font-medium flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          {new Date(summary.month).toLocaleDateString('es-ES', { year: 'numeric', month: 'long' })}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {month.unique_users} active users
+                          {summary.total_user_scans} escaneos de usuarios
                         </p>
                       </div>
                       <div className="text-right space-y-1">
-                        <p className="text-sm font-medium">{month.total_scans} scans</p>
-                        <p className="text-sm text-muted-foreground">
-                          {month.total_ai_analyses} AI analyses
+                        <p className="text-sm font-medium">{summary.total_scans} escaneos totales</p>
+                        <p className="text-xs text-muted-foreground">
+                          {summary.total_ai_tokens_used} tokens IA
                         </p>
-                        <p className="text-sm font-bold text-primary">
-                          {month.total_credits_used} credits
-                        </p>
+                        <div className="flex gap-2 justify-end">
+                          <Badge variant="outline" className="text-xs">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            {summary.total_valid_scans}
+                          </Badge>
+                          <Badge variant="destructive" className="text-xs">
+                            <XCircle className="h-3 w-3 mr-1" />
+                            {summary.total_invalid_scans}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -451,60 +459,32 @@ export default function OrgDashboard() {
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>User Scan Activity</CardTitle>
-              <CardDescription>Top users by scan count</CardDescription>
+              <CardTitle>Uso por Usuario</CardTitle>
+              <CardDescription>Top usuarios por cantidad de escaneos</CardDescription>
             </CardHeader>
             <CardContent>
               {userUsage.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No user activity data</p>
-              ) : (
-                <div className="space-y-4">
-                  {userUsage.map((user, idx) => (
-                    <div key={idx} className="flex items-center justify-between border-b pb-4 last:border-0">
-                      <div className="space-y-1">
-                        <p className="font-medium">{user.full_name}</p>
-                        <p className="text-sm text-muted-foreground">{user.department_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Last scan: {new Date(user.last_scan_date).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold">{user.total_scans}</p>
-                        <p className="text-xs text-muted-foreground">scans</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="logs" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Subscription Usage Logs</CardTitle>
-              <CardDescription>Recent credit usage activity</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {usageLogs.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No usage logs available</p>
+                <p className="text-muted-foreground text-center py-8">No hay datos de uso por usuario</p>
               ) : (
                 <div className="space-y-3">
-                  {usageLogs.map((log) => (
-                    <div key={log.id} className="flex items-center justify-between text-sm border-b pb-3 last:border-0">
-                      <div className="flex items-center gap-3">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium">{log.action_type}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(log.created_at).toLocaleString()}
-                          </p>
+                  {userUsage.map((user) => (
+                    <div key={user.user_id} className="flex items-center justify-between border-b pb-3 last:border-0">
+                      <div className="space-y-1 flex-1">
+                        <p className="font-medium">{user.full_name}</p>
+                        <p className="text-sm text-muted-foreground">{user.email}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{user.department_name}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(user.last_scan_date).toLocaleDateString()}
+                          </span>
                         </div>
                       </div>
-                      <Badge variant="outline">
-                        {log.credits_used} credits
-                      </Badge>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{user.total_scans}</div>
+                        <p className="text-xs text-muted-foreground">escaneos</p>
+                      </div>
                     </div>
                   ))}
                 </div>
