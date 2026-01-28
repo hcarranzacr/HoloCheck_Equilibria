@@ -32,6 +32,44 @@ class UserProfileUpdate(BaseModel):
     role: Optional[str] = None
 
 
+@router.get("/by-user-id/{user_id}")
+async def get_profile_by_user_id(
+    user_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get user profile by user_id (SPECIALIZED ENDPOINT)"""
+    try:
+        logger.info(f"[get_profile_by_user_id] Searching for user_id: {user_id}")
+        query = select(UserProfile).where(UserProfile.user_id == user_id)
+        result = await db.execute(query)
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            logger.warning(f"[get_profile_by_user_id] Profile not found for user_id: {user_id}")
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        logger.info(f"[get_profile_by_user_id] Profile found: {profile.full_name} ({profile.email})")
+        return {
+            "id": str(profile.id),
+            "user_id": profile.user_id,
+            "organization_id": str(profile.organization_id),
+            "department_id": str(profile.department_id) if profile.department_id else None,
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "role": profile.role,
+            "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[get_profile_by_user_id] Error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get user profile: {str(e)}"
+        )
+
+
 @router.get("")
 async def list_user_profiles(
     skip: int = Query(0, ge=0),

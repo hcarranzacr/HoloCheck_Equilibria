@@ -1,377 +1,101 @@
 import { createClient } from '@metagptx/web-sdk';
-import { supabase } from './supabase';
 
 const client = createClient();
 
 export interface BiometricMeasurement {
   id: string;
   user_id: string;
-  scan_id: string;
-  measurement_timestamp: string;
+  measurement_id?: string;
   heart_rate?: number;
-  respiratory_rate?: number;
-  blood_pressure?: number;
   sdnn?: number;
   rmssd?: number;
-  mental_stress_index?: number;
-  physiological_score?: number;
-  mental_score?: number;
-  physical_score?: number;
-  vital_index_score?: number;
-  risk_score?: number;
-  bmi?: number;
-  waist_height_ratio?: number;
-  body_shape_index?: number;
-  abdominal_circumference_cm?: number;
-  global_health_score?: number;
-  wellness_index_score?: number;
   ai_stress?: number;
   ai_fatigue?: number;
-  ai_recovery?: number;
   ai_cognitive_load?: number;
+  ai_recovery?: number;
+  mental_score?: number;
+  bio_age_basic?: number;
+  created_at?: string;
+  vital_index_score?: number;
+  physiological_score?: number;
+  wellness_index_score?: number;
+  mental_stress_index?: number;
   cardiac_load?: number;
   vascular_capacity?: number;
   cv_risk_heart_attack?: number;
   cv_risk_stroke?: number;
-  bio_age_basic?: number;
-  arrhythmias_detected?: boolean;
+  bmi?: number;
+  abdominal_circumference_cm?: number;
+  waist_height_ratio?: number;
+  body_shape_index?: number;
+  arrhythmias_detected?: number;
   signal_to_noise_ratio?: number;
   scan_quality_index?: number;
-  created_at: string;
+  global_health_score?: number;
 }
 
-export interface BiometricIndicatorInfo {
-  indicator_code: string;
-  display_name: string;
-  unit: string | null;
-  min_value: string;
-  max_value: string;
-  description: string;
-  interpretation: string;
-  influencing_factors: string;
-  tips: string;
-  risk_ranges: Record<string, [number, number]> | null;
-  is_clinical: boolean;
-}
-
-export interface User {
+export interface UserProfile {
   id: string;
+  user_id: string;
+  organization_id: string;
+  department_id?: string;
+  full_name?: string;
   email: string;
-  full_name: string;
   role: string;
-  department?: string;
-  position?: string;
-  hire_date?: string;
-  is_active: boolean;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface Recommendation {
-  id: string;
+  id: number;
   user_id: string;
-  partnership_id: string;
-  recommendation_type: string;
-  priority: string;
-  title: string;
-  description: string;
-  benefits: string[];
-  estimated_impact: string;
-  validity_start: string;
-  validity_end: string;
-  is_active: boolean;
+  measurement_id?: string;
+  analysis_type: string;
+  recommendation_text: string;
+  priority?: string;
+  category?: string;
+  status: string;
   created_at: string;
-  partnership?: {
-    id: string;
-    company_name: string;
-    category: string;
-    logo_url?: string;
-  };
 }
 
-// Helper function to get Supabase auth token
-async function getAuthToken(): Promise<string | null> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
-  } catch (error) {
-    console.error('Error getting auth token:', error);
-    return null;
-  }
-}
+class APIClient {
+  client = client;
 
-class ApiClient {
-  private client = client;
-
-  // Auth namespace for compatibility
-  auth = {
-    me: async () => {
-      const user = await this.client.auth.me();
-      return user.data;
-    },
-    toLogin: async () => {
-      await this.client.auth.toLogin();
-    },
-    logout: async () => {
-      await this.client.auth.logout();
-    },
-    getSession: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      return session;
-    },
-    getUser: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    },
-    signOut: async () => {
-      await supabase.auth.signOut();
-      window.location.href = '/login';
-    }
-  };
-
-  // Auth methods
-  async getCurrentUser() {
-    const user = await this.client.auth.me();
-    return user.data;
-  }
-
-  async login() {
-    await this.client.auth.toLogin();
-  }
-
-  async logout() {
-    await this.client.auth.logout();
-  }
-
-  // User Profiles namespace for compatibility
-  userProfiles = {
-    query: async (params: any) => {
-      const response = await this.client.entities.user_profiles.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (params: any) => {
-      const response = await this.client.entities.user_profiles.get(params);
-      return response.data;
-    },
-    list: async (organizationId?: string) => {
-      const query = organizationId ? { organization_id: organizationId } : {};
-      const response = await this.client.entities.user_profiles.query({ query });
-      return { data: response.data, items: response.data.items };
-    },
-    listAll: async () => {
-      const response = await this.client.entities.user_profiles.queryAll({});
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.user_profiles.create({ data });
-      return response.data;
-    },
-    update: async (id: string, data: any) => {
-      const response = await this.client.entities.user_profiles.update({ id, data });
-      return response.data;
-    },
-    delete: async (params: any) => {
-      return await this.client.entities.user_profiles.delete(params);
-    }
-  };
-
-  // Organizations namespace
-  organizations = {
-    query: async (params: any) => {
-      const response = await this.client.entities.organizations.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.organizations.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    list: async () => {
-      const response = await this.client.entities.organizations.queryAll({});
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (id: string) => {
-      const response = await this.client.entities.organizations.get({ id });
-      return response.data;
-    }
-  };
-
-  // Departments namespace
-  departments = {
-    query: async (params: any) => {
-      const response = await this.client.entities.departments.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.departments.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    list: async () => {
-      const response = await this.client.entities.departments.queryAll({});
-      return { data: response.data, items: response.data.items };
-    },
-    listAll: async () => {
-      const response = await this.client.entities.departments.queryAll({});
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (id: string) => {
-      const response = await this.client.entities.departments.get({ id });
-      return response.data;
-    },
-    create: async (params: any) => {
-      const response = await this.client.entities.departments.create(params);
-      return response.data;
-    },
-    update: async (params: any) => {
-      const response = await this.client.entities.departments.update(params);
-      return response.data;
-    },
-    delete: async (params: any) => {
-      return await this.client.entities.departments.delete(params);
-    }
-  };
-
-  // Measurements namespace
-  measurements = {
-    query: async (params: any) => {
-      const response = await this.client.entities.biometric_measurements.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.biometric_measurements.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.biometric_measurements.create({ data });
-      return response.data;
-    }
-  };
-
-  // Dashboards namespace - FIXED: Now includes Supabase auth token
-  dashboards = {
-    getStats: async (params: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/stats',
-        method: 'GET',
-        data: params,
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    hr: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/hr',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    leader: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/leader',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    admin: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/admin',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    }
-  };
-
-  // AI Analyses namespace
-  aiAnalyses = {
-    query: async (params: any) => {
-      const response = await this.client.entities.ai_analyses.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.ai_analyses.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    }
-  };
-
-  // Prompts namespace
-  prompts = {
-    query: async (params: any) => {
-      const response = await this.client.entities.prompts.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.prompts.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (params: any) => {
-      const response = await this.client.entities.prompts.create(params);
-      return response.data;
-    },
-    update: async (params: any) => {
-      const response = await this.client.entities.prompts.update(params);
-      return response.data;
-    },
-    delete: async (params: any) => {
-      return await this.client.entities.prompts.delete(params);
-    }
-  };
-
-  // Audit log method - updated signature to match usage
-  async logAudit(userId: string, action: string, entityType: string, details: any) {
+  // User Profiles - USE SPECIALIZED ENDPOINT
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
     try {
-      const token = await getAuthToken();
-      await this.client.apiCall.invoke({
-        url: '/api/v1/audit-logs',
-        method: 'POST',
-        data: { user_id: userId, action, entity_type: entityType, details },
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
+      const response = await this.client.apiCall.invoke({
+        url: `/api/v1/entities/user_profiles/by-user-id/${userId}`,
+        method: 'GET',
       });
+      return response.data;
     } catch (error) {
-      console.error('Error logging audit:', error);
+      console.error('Error fetching user profile:', error);
+      return null;
     }
   }
 
-  // Biometric measurements
+  // Biometric Measurements - USE SPECIALIZED ENDPOINTS
   async getLatestMeasurement(userId: string): Promise<BiometricMeasurement | null> {
     try {
-      const response = await this.client.entities.biometric_measurements.query({
-        query: { user_id: userId },
-        sort: '-measurement_timestamp',
-        limit: 1,
+      const response = await this.client.apiCall.invoke({
+        url: `/api/v1/entities/biometric_measurements/latest/${userId}`,
+        method: 'GET',
       });
-      return response.data.items[0] || null;
+      return response.data;
     } catch (error) {
       console.error('Error fetching latest measurement:', error);
       return null;
     }
   }
 
-  async getMeasurementHistory(userId: string, limit = 10): Promise<BiometricMeasurement[]> {
+  async getMeasurementHistory(userId: string, limit = 30): Promise<BiometricMeasurement[]> {
     try {
-      const response = await this.client.entities.biometric_measurements.query({
-        query: { user_id: userId },
-        sort: '-measurement_timestamp',
-        limit,
+      const response = await this.client.apiCall.invoke({
+        url: `/api/v1/entities/biometric_measurements/history/${userId}`,
+        method: 'GET',
+        data: { limit },
       });
-      return response.data.items;
+      return response.data;
     } catch (error) {
       console.error('Error fetching measurement history:', error);
       return [];
@@ -381,7 +105,7 @@ class ApiClient {
   async getAllMeasurements(limit = 100): Promise<BiometricMeasurement[]> {
     try {
       const response = await this.client.entities.biometric_measurements.queryAll({
-        sort: '-measurement_timestamp',
+        sort: '-created_at',
         limit,
       });
       return response.data.items;
@@ -391,72 +115,11 @@ class ApiClient {
     }
   }
 
-  // Biometric indicator ranges - FIXED: Now includes auth token
-  async getBiometricIndicatorRanges(): Promise<Record<string, Record<string, [number, number]>>> {
-    try {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/biometric-indicators/ranges',
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching biometric indicator ranges:', error);
-      return {};
-    }
-  }
-
-  // Biometric indicator info - FIXED: Now includes auth token
-  async getBiometricIndicatorInfo(indicatorCode: string): Promise<BiometricIndicatorInfo | null> {
-    try {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: `/api/v1/biometric-indicators/info/${indicatorCode}`,
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching indicator info for ${indicatorCode}:`, error);
-      return null;
-    }
-  }
-
-  // Users
-  async getAllUsers(): Promise<User[]> {
-    try {
-      const response = await this.client.entities.users.queryAll({
-        sort: '-created_at',
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching all users:', error);
-      return [];
-    }
-  }
-
-  async getUserById(userId: string): Promise<User | null> {
-    try {
-      const response = await this.client.entities.users.get({
-        id: userId,
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching user ${userId}:`, error);
-      return null;
-    }
-  }
-
   // Recommendations
   async getUserRecommendations(userId: string): Promise<Recommendation[]> {
     try {
       const response = await this.client.entities.recommendations.query({
-        query: { user_id: userId, is_active: true },
+        query: { user_id: userId, status: 'active' },
         sort: '-created_at',
       });
       return response.data.items;
@@ -478,73 +141,22 @@ class ApiClient {
     }
   }
 
-  // Partnerships
-  async getAllPartnerships() {
-    try {
-      const response = await this.client.entities.partnerships.queryAll({
-        sort: '-created_at',
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching partnerships:', error);
-      return [];
-    }
+  // Generic entity access
+  get entities() {
+    return this.client.entities;
   }
 
-  async createPartnership(data: any) {
-    try {
-      const response = await this.client.entities.partnerships.create({
-        data,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error creating partnership:', error);
-      throw error;
-    }
+  get userProfiles() {
+    return this.client.entities.user_profiles;
   }
 
-  async updatePartnership(id: string, data: any) {
-    try {
-      const response = await this.client.entities.partnerships.update({
-        id,
-        data,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error updating partnership:', error);
-      throw error;
-    }
+  get biometricMeasurements() {
+    return this.client.entities.biometric_measurements;
   }
 
-  async deletePartnership(id: string) {
-    try {
-      await this.client.entities.partnerships.delete({ id });
-    } catch (error) {
-      console.error('Error deleting partnership:', error);
-      throw error;
-    }
-  }
-
-  // Generic API call with automatic auth
-  async call(url: string, method: string = 'GET', data?: any) {
-    const token = await getAuthToken();
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-
-    const response = await this.client.apiCall.invoke({
-      url,
-      method,
-      data,
-      options: {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }
-    });
-    return response.data;
+  get recommendations() {
+    return this.client.entities.recommendations;
   }
 }
 
-export const apiClient = new ApiClient();
-export const api = apiClient; // Alias for compatibility
+export const apiClient = new APIClient();
