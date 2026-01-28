@@ -1,5 +1,6 @@
 import logging
 from typing import Optional, Dict, Any, List
+from uuid import UUID
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +31,7 @@ class OrganizationsService:
             logger.error(f"Error creating organizations: {str(e)}")
             raise
 
-    async def get_by_id(self, obj_id: int) -> Optional[Organizations]:
+    async def get_by_id(self, obj_id: UUID) -> Optional[Organizations]:
         """Get organizations by ID"""
         try:
             query = select(Organizations).where(Organizations.id == obj_id)
@@ -85,7 +86,7 @@ class OrganizationsService:
             logger.error(f"Error fetching organizations list: {str(e)}")
             raise
 
-    async def update(self, obj_id: int, update_data: Dict[str, Any]) -> Optional[Organizations]:
+    async def update(self, obj_id: UUID, update_data: Dict[str, Any]) -> Optional[Organizations]:
         """Update organizations"""
         try:
             obj = await self.get_by_id(obj_id)
@@ -105,7 +106,7 @@ class OrganizationsService:
             logger.error(f"Error updating organizations {obj_id}: {str(e)}")
             raise
 
-    async def delete(self, obj_id: int) -> bool:
+    async def delete(self, obj_id: UUID) -> bool:
         """Delete organizations"""
         try:
             obj = await self.get_by_id(obj_id)

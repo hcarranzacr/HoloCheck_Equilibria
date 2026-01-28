@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import List, Optional
+from uuid import UUID
 
 from datetime import datetime, date
 
@@ -24,14 +25,14 @@ router = APIRouter(prefix="/api/v1/entities/organizations", tags=["organizations
 class OrganizationsData(BaseModel):
     """Entity data schema (for create/update)"""
     name: str
-    sector_id: int = None
-    industry_id: int = None
-    subscription_plan_id: int = None
-    logo_url: str = None
-    brand_slogan: str = None
-    welcome_message: str = None
-    primary_color: str = None
-    secondary_color: str = None
+    sector_id: Optional[int] = None
+    industry_id: Optional[int] = None
+    subscription_plan_id: Optional[UUID] = None
+    logo_url: Optional[str] = None
+    brand_slogan: Optional[str] = None
+    welcome_message: Optional[str] = None
+    primary_color: Optional[str] = None
+    secondary_color: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -40,7 +41,7 @@ class OrganizationsUpdateData(BaseModel):
     name: Optional[str] = None
     sector_id: Optional[int] = None
     industry_id: Optional[int] = None
-    subscription_plan_id: Optional[int] = None
+    subscription_plan_id: Optional[UUID] = None
     logo_url: Optional[str] = None
     brand_slogan: Optional[str] = None
     welcome_message: Optional[str] = None
@@ -51,11 +52,11 @@ class OrganizationsUpdateData(BaseModel):
 
 class OrganizationsResponse(BaseModel):
     """Entity response schema"""
-    id: str
+    id: UUID
     name: str
     sector_id: Optional[int] = None
     industry_id: Optional[int] = None
-    subscription_plan_id: Optional[int] = None
+    subscription_plan_id: Optional[UUID] = None
     logo_url: Optional[str] = None
     brand_slogan: Optional[str] = None
     welcome_message: Optional[str] = None
@@ -82,7 +83,7 @@ class OrganizationsBatchCreateRequest(BaseModel):
 
 class OrganizationsBatchUpdateItem(BaseModel):
     """Batch update item"""
-    id: int
+    id: UUID
     updates: OrganizationsUpdateData
 
 
@@ -93,7 +94,7 @@ class OrganizationsBatchUpdateRequest(BaseModel):
 
 class OrganizationsBatchDeleteRequest(BaseModel):
     """Batch delete request"""
-    ids: List[int]
+    ids: List[UUID]
 
 
 # ---------- Routes ----------
@@ -143,8 +144,8 @@ async def query_organizationss_all(
     fields: str = Query(None, description="Comma-separated list of fields to return"),
     db: AsyncSession = Depends(get_db),
 ):
-    # Query organizationss with filtering, sorting, and pagination without user limitation
-    logger.debug(f"Querying organizationss: query={query}, sort={sort}, skip={skip}, limit={limit}, fields={fields}")
+    """Query organizationss with filtering, sorting, and pagination without user limitation"""
+    logger.debug(f"Querying all organizationss: query={query}, sort={sort}, skip={skip}, limit={limit}, fields={fields}")
 
     service = OrganizationsService(db)
     try:
@@ -167,13 +168,13 @@ async def query_organizationss_all(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error querying organizationss: {str(e)}", exc_info=True)
+        logger.error(f"Error querying all organizationss: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/{id}", response_model=OrganizationsResponse)
 async def get_organizations(
-    id: int,
+    id: UUID,
     fields: str = Query(None, description="Comma-separated list of fields to return"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -218,7 +219,7 @@ async def create_organizations(
                 action="create",
                 entity_type="organizations",
                 entity_id=str(result.id),
-                new_data=data.model_dump(),
+                new_data=data.model_dump(mode='json'),
                 organization_id=str(result.id),
                 role=current_user.role,
             )
@@ -261,7 +262,7 @@ async def create_organizationss_batch(
                         action="create",
                         entity_type="organizations",
                         entity_id=str(result.id),
-                        new_data=item_data.model_dump(),
+                        new_data=item_data.model_dump(mode='json'),
                         organization_id=str(result.id),
                         role=current_user.role,
                     )
@@ -326,7 +327,7 @@ async def update_organizationss_batch(
 
 @router.put("/{id}", response_model=OrganizationsResponse)
 async def update_organizations(
-    id: int,
+    id: UUID,
     data: OrganizationsUpdateData,
     current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -423,7 +424,7 @@ async def delete_organizationss_batch(
 
 @router.delete("/{id}")
 async def delete_organizations(
-    id: int,
+    id: UUID,
     current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -458,7 +459,7 @@ async def delete_organizations(
             logger.error(f"Audit logging failed: {audit_error}")
         
         logger.info(f"Organizations {id} deleted successfully")
-        return {"message": "Organizations deleted successfully", "id": id}
+        return {"message": "Organizations deleted successfully", "id": str(id)}
     except HTTPException:
         raise
     except Exception as e:
