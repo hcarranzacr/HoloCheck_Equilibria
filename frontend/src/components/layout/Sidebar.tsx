@@ -22,6 +22,8 @@ import {
   TrendingUp,
   BookOpen,
   X,
+  Gift,
+  Handshake,
 } from 'lucide-react';
 
 interface NavItem {
@@ -105,6 +107,8 @@ const navigation: NavItem[] = [
       { title: 'Uso de Créditos', href: '/admin/usage-logs', icon: Activity },
       { title: 'Prompts', href: '/admin/prompts', icon: Zap },
       { title: 'Análisis IA', href: '/admin/ai-analyses', icon: Brain },
+      { title: 'Alianzas', href: '/admin/partnerships', icon: Handshake },
+      { title: 'Programa de Beneficios', href: '/admin/benefits-management', icon: Gift },
       { title: 'Logs del Sistema', href: '/admin/system-logs', icon: FileText },
       { title: 'Configuración', href: '/admin/settings', icon: Settings },
     ],

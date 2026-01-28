@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { LogOut, User, Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { useBranding } from '@/contexts/BrandingContext';
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const [userName, setUserName] = useState<string>('Usuario');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
+  const { branding, loading: brandingLoading } = useBranding();
 
   useEffect(() => {
     loadUserData();
@@ -31,8 +33,13 @@ export default function AppLayout() {
     console.log('window.innerHeight:', window.innerHeight);
     console.log('isSidebarOpen:', isSidebarOpen);
     console.log('userAgent:', navigator.userAgent);
+    console.log('branding loaded:', !!branding);
+    if (branding) {
+      console.log('branding slug:', branding.slug);
+      console.log('branding primary_color:', branding.primary_color);
+    }
     console.log('===========================');
-  }, [isMobile, isSidebarOpen]);
+  }, [isMobile, isSidebarOpen, branding]);
 
   async function loadUserData() {
     try {
@@ -62,6 +69,11 @@ export default function AppLayout() {
     console.log('Toggling sidebar. Current state:', isSidebarOpen);
     setIsSidebarOpen(!isSidebarOpen);
   };
+
+  // Apply dynamic header background color from branding
+  const headerStyle = branding?.primary_color 
+    ? { backgroundColor: branding.primary_color }
+    : {};
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -109,16 +121,28 @@ export default function AppLayout() {
       />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4">
+        {/* Header with dynamic branding */}
+        <header 
+          className="border-b border-slate-200 px-4 sm:px-6 py-4 transition-colors duration-300"
+          style={headerStyle}
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Spacer for hamburger button on mobile */}
               {isMobile && <div className="w-10" />}
               
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
-                HoloCheck Equilibria
-              </h1>
+              {/* Logo or Title */}
+              {branding?.logo_url ? (
+                <img 
+                  src={branding.logo_url} 
+                  alt={branding.organization_name || 'Logo'} 
+                  className="h-8 sm:h-10 object-contain"
+                />
+              ) : (
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
+                  HoloCheck Equilibria
+                </h1>
+              )}
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4">
@@ -141,7 +165,16 @@ export default function AppLayout() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-4 sm:p-6">
-          <Outlet />
+          {brandingLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto mb-4"></div>
+                <p className="text-slate-600">Cargando personalización...</p>
+              </div>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>

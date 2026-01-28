@@ -9,7 +9,7 @@ import BiometricGauge from '@/components/dashboard/BiometricGauge';
 import SectionHeader from '@/components/dashboard/SectionHeader';
 import LoyaltyBenefitsIndicator from '@/components/dashboard/LoyaltyBenefitsIndicator';
 import { getWellnessColor, getWellnessStatusString } from '@/lib/biometric-utils';
-import { ALL_BIOMETRIC_INDICATORS, CATEGORY_LABELS } from '@/lib/all-biometric-indicators';
+import { ALL_BIOMETRIC_INDICATORS, CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/all-biometric-indicators';
 import { apiClient } from '@/lib/api-client';
 
 interface DashboardData {
@@ -108,6 +108,7 @@ export default function EmployeeDashboard() {
       };
 
       console.log('✅ [Employee Dashboard] Data loaded:', dashboardData);
+      console.log('📋 [Employee Dashboard] Latest scan fields:', Object.keys(latestScan || {}));
       setData(dashboardData);
     } catch (error) {
       console.error('Error loading dashboard:', error);
@@ -151,8 +152,12 @@ export default function EmployeeDashboard() {
   
   ALL_BIOMETRIC_INDICATORS.forEach(indicator => {
     const value = latestScan[indicator.key];
-    // Only include if value exists and is not null/undefined
-    if (value !== null && value !== undefined && value !== '') {
+    // Only include if value exists and is not null/undefined/empty/0 (except for arrhythmias_detected which can be 0)
+    const hasValue = indicator.key === 'arrhythmias_detected' 
+      ? value !== null && value !== undefined
+      : value !== null && value !== undefined && value !== '' && value !== 0;
+    
+    if (hasValue) {
       if (!indicatorsByCategory[indicator.category]) {
         indicatorsByCategory[indicator.category] = [];
       }
@@ -245,49 +250,54 @@ export default function EmployeeDashboard() {
           </Card>
         </div>
 
-        {/* All Biometric Indicators by Category */}
-        {Object.entries(indicatorsByCategory).map(([category, indicators]) => (
-          <div key={category}>
-            <SectionHeader
-              title={CATEGORY_LABELS[category] || category}
-              description={`${indicators.length} indicadores disponibles`}
-              metricCount={indicators.length}
-              icon="📊"
-            />
+        {/* All Biometric Indicators by Category - Ordered */}
+        {CATEGORY_ORDER.map(category => {
+          const indicators = indicatorsByCategory[category];
+          if (!indicators || indicators.length === 0) return null;
+          
+          return (
+            <div key={category}>
+              <SectionHeader
+                title={CATEGORY_LABELS[category] || category}
+                description={`${indicators.length} indicadores disponibles`}
+                metricCount={indicators.length}
+                icon="📊"
+              />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {indicators.map(indicator => {
-                const value = latestScan[indicator.key];
-                const indicatorRanges = ranges[indicator.indicatorCode];
-                
-                if (indicator.hasInfo) {
-                  return (
-                    <BiometricGaugeWithInfo
-                      key={indicator.key}
-                      value={value}
-                      indicatorCode={indicator.indicatorCode}
-                      label={indicator.label}
-                      riskRanges={indicatorRanges}
-                    />
-                  );
-                } else {
-                  return (
-                    <BiometricGauge
-                      key={indicator.key}
-                      value={value}
-                      label={indicator.label}
-                      unit=""
-                      min={0}
-                      max={100}
-                      riskRanges={indicatorRanges}
-                      indicatorCode={indicator.key}
-                    />
-                  );
-                }
-              })}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {indicators.map(indicator => {
+                  const value = latestScan[indicator.key];
+                  const indicatorRanges = ranges[indicator.indicatorCode];
+                  
+                  if (indicator.hasInfo) {
+                    return (
+                      <BiometricGaugeWithInfo
+                        key={indicator.key}
+                        value={value}
+                        indicatorCode={indicator.indicatorCode}
+                        label={indicator.label}
+                        riskRanges={indicatorRanges}
+                      />
+                    );
+                  } else {
+                    return (
+                      <BiometricGauge
+                        key={indicator.key}
+                        value={value}
+                        label={indicator.label}
+                        unit=""
+                        min={0}
+                        max={100}
+                        riskRanges={indicatorRanges}
+                        indicatorCode={indicator.key}
+                      />
+                    );
+                  }
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

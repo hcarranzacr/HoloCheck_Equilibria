@@ -3,10 +3,10 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from core.auth import AccessTokenError, decode_access_token
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from schemas.auth import UserResponse
+from core.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -34,68 +34,108 @@ async def get_bearer_token_optional(
 
 
 async def get_current_user(token: str = Depends(get_bearer_token)) -> UserResponse:
-    """Dependency to get current authenticated user via JWT token."""
+    """Dependency to get current authenticated user via Supabase JWT token."""
     try:
-        payload = decode_access_token(token)
-    except AccessTokenError as exc:
-        # Log error type only, not the full exception which may contain sensitive token data
-        logger.warning("Token validation failed: %s", type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message)
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
-
-    last_login_raw = payload.get("last_login")
-    last_login = None
-    if isinstance(last_login_raw, str):
-        try:
-            last_login = datetime.fromisoformat(last_login_raw)
-        except ValueError:
-            # Log user hash instead of actual user ID to avoid exposing sensitive information
-            user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8] if user_id else "unknown"
-            logger.debug("Failed to parse last_login for user hash: %s", user_hash)
-
-    return UserResponse(
-        id=user_id,
-        email=payload.get("email", ""),
-        name=payload.get("name"),
-        role=payload.get("role", "user"),
-        last_login=last_login,
-    )
+        # Get Supabase client
+        supabase = get_supabase_client()
+        
+        # Verify token with Supabase
+        user_response = supabase.auth.get_user(token)
+        
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+        
+        user = user_response.user
+        user_id = user.id
+        email = user.email or ""
+        
+        # Get user metadata
+        user_metadata = user.user_metadata or {}
+        name = user_metadata.get("full_name") or user_metadata.get("name")
+        
+        # Get role from user_metadata or app_metadata
+        app_metadata = user.app_metadata or {}
+        role = user_metadata.get("role") or app_metadata.get("role", "user")
+        
+        # Parse last_login if available
+        last_login = None
+        last_login_raw = user_metadata.get("last_login")
+        if isinstance(last_login_raw, str):
+            try:
+                last_login = datetime.fromisoformat(last_login_raw)
+            except ValueError:
+                user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+                logger.debug("Failed to parse last_login for user hash: %s", user_hash)
+        
+        return UserResponse(
+            id=user_id,
+            email=email,
+            name=name,
+            role=role,
+            last_login=last_login,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error verifying token with Supabase: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
 
 
 async def get_current_user_optional(token: Optional[str] = Depends(get_bearer_token_optional)) -> Optional[UserResponse]:
-    """Dependency to get current authenticated user via JWT token (optional)."""
+    """Dependency to get current authenticated user via Supabase JWT token (optional)."""
     if not token:
         return None
     
     try:
-        payload = decode_access_token(token)
-    except AccessTokenError as exc:
-        logger.warning("Token validation failed: %s", type(exc).__name__)
+        # Get Supabase client
+        supabase = get_supabase_client()
+        
+        # Verify token with Supabase
+        user_response = supabase.auth.get_user(token)
+        
+        if not user_response or not user_response.user:
+            return None
+        
+        user = user_response.user
+        user_id = user.id
+        email = user.email or ""
+        
+        # Get user metadata
+        user_metadata = user.user_metadata or {}
+        name = user_metadata.get("full_name") or user_metadata.get("name")
+        
+        # Get role from user_metadata or app_metadata
+        app_metadata = user.app_metadata or {}
+        role = user_metadata.get("role") or app_metadata.get("role", "user")
+        
+        # Parse last_login if available
+        last_login = None
+        last_login_raw = user_metadata.get("last_login")
+        if isinstance(last_login_raw, str):
+            try:
+                last_login = datetime.fromisoformat(last_login_raw)
+            except ValueError:
+                user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+                logger.debug("Failed to parse last_login for user hash: %s", user_hash)
+        
+        return UserResponse(
+            id=user_id,
+            email=email,
+            name=name,
+            role=role,
+            last_login=last_login,
+        )
+        
+    except Exception as exc:
+        logger.warning(f"Token validation failed: {exc}")
         return None
-
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
-
-    last_login_raw = payload.get("last_login")
-    last_login = None
-    if isinstance(last_login_raw, str):
-        try:
-            last_login = datetime.fromisoformat(last_login_raw)
-        except ValueError:
-            user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8] if user_id else "unknown"
-            logger.debug("Failed to parse last_login for user hash: %s", user_hash)
-
-    return UserResponse(
-        id=user_id,
-        email=payload.get("email", ""),
-        name=payload.get("name"),
-        role=payload.get("role", "user"),
-        last_login=last_login,
-    )
 
 
 async def get_admin_user(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:

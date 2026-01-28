@@ -4,21 +4,18 @@ Provides endpoints for retrieving biometric indicator information and ranges
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Dict, Any
 import logging
 
 from core.database import get_db
-from models.param_biometric_indicators_info import ParamBiometricIndicatorsInfo
+from core.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/v1/biometric-indicators", tags=["biometric-indicators"])
 logger = logging.getLogger(__name__)
 
 
 @router.get("/ranges", response_model=Dict[str, Any])
-async def get_biometric_indicator_ranges(
-    db: AsyncSession = Depends(get_db)
-):
+async def get_biometric_indicator_ranges():
     """
     Get all biometric indicator risk ranges for frontend evaluation
     
@@ -31,19 +28,24 @@ async def get_biometric_indicator_ranges(
         }
     """
     try:
+        supabase = get_supabase_client()
+        
         # Query all indicators with their risk ranges
-        result = await db.execute(
-            select(
-                ParamBiometricIndicatorsInfo.indicator_code,
-                ParamBiometricIndicatorsInfo.risk_ranges
-            )
-        )
-        indicators = result.all()
+        result = supabase.table('param_biometric_indicators_info').select(
+            'indicator_code, risk_ranges'
+        ).execute()
+        
+        if not result.data:
+            logger.warning("No biometric indicators found in database")
+            return {}
         
         # Build response dictionary
         ranges_dict = {}
-        for indicator_code, risk_ranges in indicators:
-            if risk_ranges:  # Only include if risk_ranges is not null
+        for indicator in result.data:
+            indicator_code = indicator.get('indicator_code')
+            risk_ranges = indicator.get('risk_ranges')
+            
+            if indicator_code and risk_ranges:  # Only include if both exist
                 ranges_dict[indicator_code] = risk_ranges
         
         logger.info(f"Retrieved risk ranges for {len(ranges_dict)} indicators")
@@ -58,10 +60,7 @@ async def get_biometric_indicator_ranges(
 
 
 @router.get("/info/{indicator_code}")
-async def get_biometric_indicator_info(
-    indicator_code: str,
-    db: AsyncSession = Depends(get_db)
-):
+async def get_biometric_indicator_info(indicator_code: str):
     """
     Get detailed information for a specific biometric indicator
     
@@ -72,30 +71,32 @@ async def get_biometric_indicator_info(
         Complete indicator information including ranges, description, tips, etc.
     """
     try:
-        result = await db.execute(
-            select(ParamBiometricIndicatorsInfo)
-            .where(ParamBiometricIndicatorsInfo.indicator_code == indicator_code)
-        )
-        indicator = result.scalar_one_or_none()
+        supabase = get_supabase_client()
         
-        if not indicator:
+        result = supabase.table('param_biometric_indicators_info').select('*').eq(
+            'indicator_code', indicator_code
+        ).execute()
+        
+        if not result.data or len(result.data) == 0:
             raise HTTPException(
                 status_code=404,
                 detail=f"Indicator '{indicator_code}' not found"
             )
         
+        indicator = result.data[0]
+        
         return {
-            "indicator_code": indicator.indicator_code,
-            "display_name": indicator.display_name,
-            "unit": indicator.unit,
-            "min_value": indicator.min_value,
-            "max_value": indicator.max_value,
-            "description": indicator.description,
-            "interpretation": indicator.interpretation,
-            "influencing_factors": indicator.influencing_factors,
-            "tips": indicator.tips,
-            "risk_ranges": indicator.risk_ranges,
-            "is_clinical": indicator.is_clinical
+            "indicator_code": indicator.get('indicator_code'),
+            "display_name": indicator.get('display_name'),
+            "unit": indicator.get('unit'),
+            "min_value": indicator.get('min_value'),
+            "max_value": indicator.get('max_value'),
+            "description": indicator.get('description'),
+            "interpretation": indicator.get('interpretation'),
+            "influencing_factors": indicator.get('influencing_factors'),
+            "tips": indicator.get('tips'),
+            "risk_ranges": indicator.get('risk_ranges'),
+            "is_clinical": indicator.get('is_clinical')
         }
         
     except HTTPException:

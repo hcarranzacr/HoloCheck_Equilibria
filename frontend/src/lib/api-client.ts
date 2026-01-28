@@ -1,4 +1,5 @@
 import { createClient } from '@metagptx/web-sdk';
+import { supabase } from './supabase';
 
 const client = createClient();
 
@@ -85,6 +86,17 @@ export interface Recommendation {
     category: string;
     logo_url?: string;
   };
+}
+
+// Helper function to get Supabase auth token
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch (error) {
+    console.error('Error getting auth token:', error);
+    return null;
+  }
 }
 
 class ApiClient {
@@ -221,28 +233,55 @@ class ApiClient {
     }
   };
 
-  // Dashboards namespace
+  // Dashboards namespace - FIXED: Now includes Supabase auth token
   dashboards = {
     getStats: async (params: any) => {
-      return await this.client.apiCall.invoke({
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
         url: '/api/v1/dashboards/stats',
         method: 'GET',
-        data: params
+        data: params,
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
+      return response.data;
     },
-    hr: async (params: any) => {
-      return await this.client.apiCall.invoke({
+    hr: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
         url: '/api/v1/dashboards/hr',
         method: 'GET',
-        data: params
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
+      return response.data;
     },
-    leader: async (params: any) => {
-      return await this.client.apiCall.invoke({
+    leader: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
         url: '/api/v1/dashboards/leader',
         method: 'GET',
-        data: params
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
+      return response.data;
+    },
+    admin: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: '/api/v1/dashboards/admin',
+        method: 'GET',
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return response.data;
     }
   };
 
@@ -284,10 +323,14 @@ class ApiClient {
   // Audit log method - updated signature to match usage
   async logAudit(userId: string, action: string, entityType: string, details: any) {
     try {
+      const token = await getAuthToken();
       await this.client.apiCall.invoke({
         url: '/api/v1/audit-logs',
         method: 'POST',
-        data: { user_id: userId, action, entity_type: entityType, details }
+        data: { user_id: userId, action, entity_type: entityType, details },
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
     } catch (error) {
       console.error('Error logging audit:', error);
@@ -336,12 +379,16 @@ class ApiClient {
     }
   }
 
-  // Biometric indicator ranges - NEW METHOD
+  // Biometric indicator ranges - FIXED: Now includes auth token
   async getBiometricIndicatorRanges(): Promise<Record<string, Record<string, [number, number]>>> {
     try {
+      const token = await getAuthToken();
       const response = await this.client.apiCall.invoke({
         url: '/api/v1/biometric-indicators/ranges',
         method: 'GET',
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
       return response.data;
     } catch (error) {
@@ -350,12 +397,16 @@ class ApiClient {
     }
   }
 
-  // Biometric indicator info
+  // Biometric indicator info - FIXED: Now includes auth token
   async getBiometricIndicatorInfo(indicatorCode: string): Promise<BiometricIndicatorInfo | null> {
     try {
+      const token = await getAuthToken();
       const response = await this.client.apiCall.invoke({
         url: `/api/v1/biometric-indicators/info/${indicatorCode}`,
         method: 'GET',
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       });
       return response.data;
     } catch (error) {

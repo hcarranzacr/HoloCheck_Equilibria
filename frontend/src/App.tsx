@@ -2,6 +2,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrandingProvider } from '@/contexts/BrandingContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
@@ -63,6 +64,7 @@ import UsageLogs from './pages/admin/usage-logs';
 import AdminCreditUsage from './pages/admin/credit-usage';
 import AdminPrompts from './pages/admin/prompts';
 import AdminPartnerships from './pages/admin/partnerships';
+import BenefitsManagement from './pages/admin/BenefitsManagement';
 
 // User Manual
 import UserManual from './pages/UserManual';
@@ -71,94 +73,98 @@ const queryClient = new QueryClient();
 
 const App = () => {
   console.log('🚀 [App] HoloCheck Equilibria - ALL ROUTES REGISTERED');
+  console.log('🎨 [App] Multitenant branding enabled with auto-detection');
   console.log('📋 [App] Employee routes: /employee/dashboard, /employee/recommendations, /employee/scan');
   console.log('📋 [App] Leader routes: /leader/dashboard, /leader/team, /leader/insights');
   console.log('📋 [App] HR routes: /hr/dashboard, /hr/insights, /hr/measurements');
   console.log('📋 [App] Org routes: /org/dashboard, /org/insights, /org/users');
-  console.log('📋 [App] Admin routes: /admin/organizations, /admin/partnerships');
+  console.log('📋 [App] Admin routes: /admin/organizations, /admin/partnerships, /admin/benefits-management');
   console.log('📖 [App] User Manual route: /user-manual');
   
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <BrowserRouter>
-            <Routes>
-              {/* Public routes WITHOUT layout */}
-              <Route path="/login" element={<Login />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/logout-callback" element={<LogoutCallbackPage />} />
-              <Route path="/unauthorized" element={<Unauthorized />} />
-              
-              {/* Protected routes WITH layout */}
-              <Route element={<ProtectedRoute />}>
-                <Route element={<AppLayout />}>
-                  {/* Root redirect */}
-                  <Route path="/" element={<Navigate to="/employee/dashboard" replace />} />
-                  
-                  {/* User Manual - Available for all roles */}
-                  <Route path="/user-manual" element={<UserManual />} />
-                  
-                  {/* Employee routes */}
-                  <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
-                  <Route path="/employee/pre-scan" element={<PreScanQuestionnaire />} />
-                  <Route path="/employee/scan" element={<EmployeeScan />} />
-                  <Route path="/employee/history" element={<EmployeeHistory />} />
-                  <Route path="/employee/profile" element={<EmployeeProfile />} />
-                  <Route path="/employee/recommendations" element={<EmployeeRecommendations />} />
-                  
-                  {/* Leader routes */}
-                  <Route path="/leader/dashboard" element={<LeaderDashboard />} />
-                  <Route path="/leader/team" element={<LeaderTeam />} />
-                  <Route path="/leader/ai-analyses" element={<LeaderAIAnalyses />} />
-                  <Route path="/leader/insights" element={<LeaderInsights />} />
-                  <Route path="/leader/measurements" element={<LeaderMeasurements />} />
-                  
-                  {/* HR routes */}
-                  <Route path="/hr/dashboard" element={<HRDashboard />} />
-                  <Route path="/hr/users" element={<HRUsers />} />
-                  <Route path="/hr/ai-analyses" element={<HRAIAnalyses />} />
-                  <Route path="/hr/insights" element={<HRInsights />} />
-                  <Route path="/hr/measurements" element={<HRMeasurements />} />
-                  <Route path="/hr/usage" element={<HRUsage />} />
-                  <Route path="/hr/at-risk" element={<HRAtRisk />} />
-                  
-                  {/* Organization Admin routes */}
-                  <Route path="/org/dashboard" element={<OrgDashboard />} />
-                  <Route path="/org/users" element={<OrgUsers />} />
-                  <Route path="/org/departments" element={<OrgDepartments />} />
-                  <Route path="/org/department-insights" element={<OrgDepartmentInsights />} />
-                  <Route path="/org/measurements" element={<OrgMeasurements />} />
-                  <Route path="/org/ai-analyses" element={<OrgAIAnalyses />} />
-                  <Route path="/org/prompts" element={<OrgPrompts />} />
-                  <Route path="/org/insights" element={<OrgInsights />} />
-                  
-                  {/* Platform Admin routes */}
-                  <Route path="/admin/organizations" element={<Organizations />} />
-                  <Route path="/admin/organization-branding" element={<OrganizationBranding />} />
-                  <Route path="/admin/users" element={<UsersPage />} />
-                  <Route path="/admin/departments" element={<DepartmentsPage />} />
-                  <Route path="/admin/invite-user" element={<InviteUser />} />
-                  <Route path="/admin/ai-analyses" element={<AIAnalyses />} />
-                  <Route path="/admin/prompts" element={<GlobalPrompts />} />
-                  <Route path="/admin/sectors-industries" element={<SectorsIndustries />} />
-                  <Route path="/admin/settings" element={<Settings />} />
-                  <Route path="/admin/subscription-plans" element={<SubscriptionPlans />} />
-                  <Route path="/admin/system-logs" element={<SystemLogs />} />
-                  <Route path="/admin/usage-logs" element={<UsageLogs />} />
-                  <Route path="/admin/credit-usage" element={<AdminCreditUsage />} />
-                  <Route path="/admin/prompts-management" element={<AdminPrompts />} />
-                  <Route path="/admin/partnerships" element={<AdminPartnerships />} />
+      <BrandingProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <BrowserRouter>
+              <Routes>
+                {/* Public routes WITHOUT layout */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/logout-callback" element={<LogoutCallbackPage />} />
+                <Route path="/unauthorized" element={<Unauthorized />} />
+                
+                {/* Protected routes WITH layout */}
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppLayout />}>
+                    {/* Root redirect */}
+                    <Route path="/" element={<Navigate to="/employee/dashboard" replace />} />
+                    
+                    {/* User Manual - Available for all roles */}
+                    <Route path="/user-manual" element={<UserManual />} />
+                    
+                    {/* Employee routes */}
+                    <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+                    <Route path="/employee/pre-scan" element={<PreScanQuestionnaire />} />
+                    <Route path="/employee/scan" element={<EmployeeScan />} />
+                    <Route path="/employee/history" element={<EmployeeHistory />} />
+                    <Route path="/employee/profile" element={<EmployeeProfile />} />
+                    <Route path="/employee/recommendations" element={<EmployeeRecommendations />} />
+                    
+                    {/* Leader routes */}
+                    <Route path="/leader/dashboard" element={<LeaderDashboard />} />
+                    <Route path="/leader/team" element={<LeaderTeam />} />
+                    <Route path="/leader/ai-analyses" element={<LeaderAIAnalyses />} />
+                    <Route path="/leader/insights" element={<LeaderInsights />} />
+                    <Route path="/leader/measurements" element={<LeaderMeasurements />} />
+                    
+                    {/* HR routes */}
+                    <Route path="/hr/dashboard" element={<HRDashboard />} />
+                    <Route path="/hr/users" element={<HRUsers />} />
+                    <Route path="/hr/ai-analyses" element={<HRAIAnalyses />} />
+                    <Route path="/hr/insights" element={<HRInsights />} />
+                    <Route path="/hr/measurements" element={<HRMeasurements />} />
+                    <Route path="/hr/usage" element={<HRUsage />} />
+                    <Route path="/hr/at-risk" element={<HRAtRisk />} />
+                    
+                    {/* Organization Admin routes */}
+                    <Route path="/org/dashboard" element={<OrgDashboard />} />
+                    <Route path="/org/users" element={<OrgUsers />} />
+                    <Route path="/org/departments" element={<OrgDepartments />} />
+                    <Route path="/org/department-insights" element={<OrgDepartmentInsights />} />
+                    <Route path="/org/measurements" element={<OrgMeasurements />} />
+                    <Route path="/org/ai-analyses" element={<OrgAIAnalyses />} />
+                    <Route path="/org/prompts" element={<OrgPrompts />} />
+                    <Route path="/org/insights" element={<OrgInsights />} />
+                    
+                    {/* Platform Admin routes */}
+                    <Route path="/admin/organizations" element={<Organizations />} />
+                    <Route path="/admin/organization-branding" element={<OrganizationBranding />} />
+                    <Route path="/admin/users" element={<UsersPage />} />
+                    <Route path="/admin/departments" element={<DepartmentsPage />} />
+                    <Route path="/admin/invite-user" element={<InviteUser />} />
+                    <Route path="/admin/ai-analyses" element={<AIAnalyses />} />
+                    <Route path="/admin/prompts" element={<GlobalPrompts />} />
+                    <Route path="/admin/sectors-industries" element={<SectorsIndustries />} />
+                    <Route path="/admin/settings" element={<Settings />} />
+                    <Route path="/admin/subscription-plans" element={<SubscriptionPlans />} />
+                    <Route path="/admin/system-logs" element={<SystemLogs />} />
+                    <Route path="/admin/usage-logs" element={<UsageLogs />} />
+                    <Route path="/admin/credit-usage" element={<AdminCreditUsage />} />
+                    <Route path="/admin/prompts-management" element={<AdminPrompts />} />
+                    <Route path="/admin/partnerships" element={<AdminPartnerships />} />
+                    <Route path="/admin/benefits-management" element={<BenefitsManagement />} />
+                  </Route>
                 </Route>
-              </Route>
-              
-              {/* 404 catch-all */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+                
+                {/* 404 catch-all */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </BrandingProvider>
     </QueryClientProvider>
   );
 };

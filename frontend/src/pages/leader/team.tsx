@@ -14,6 +14,7 @@ interface TeamMember {
   email: string;
   role: string;
   department_id: string;
+  organization_id: string;
   latest_scan?: {
     created_at: string;
     wellness_index_score: number;
@@ -37,32 +38,35 @@ export default function LeaderTeam() {
     try {
       setLoading(true);
 
-      // Get current user's department
+      // Get current user's department AND organization
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.error('User not authenticated:', userError);
         return;
       }
 
-      // Get user profile to find department_id
+      // Get user profile to find department_id AND organization_id
       const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
-        .select('department_id, departments(name)')
+        .select('department_id, organization_id, departments(name)')
         .eq('user_id', user.id)
         .single();
 
-      if (profileError || !profile?.department_id) {
+      if (profileError || !profile?.department_id || !profile?.organization_id) {
         console.error('Error loading profile:', profileError);
         return;
       }
 
       setDepartmentName(profile.departments?.name || 'Departamento');
 
-      // Get all team members in the same department
+      console.log(`🔒 Loading team for department ${profile.department_id} in organization ${profile.organization_id}`);
+
+      // CRITICAL FIX: Get team members filtered by BOTH department_id AND organization_id
       const { data: members, error: membersError } = await supabase
         .from('user_profiles')
-        .select('user_id, full_name, email, role, department_id')
+        .select('user_id, full_name, email, role, department_id, organization_id')
         .eq('department_id', profile.department_id)
+        .eq('organization_id', profile.organization_id)
         .order('full_name', { ascending: true });
 
       if (membersError) {
@@ -70,8 +74,16 @@ export default function LeaderTeam() {
         return;
       }
 
+      console.log(`✅ Found ${members?.length || 0} team members in same department AND organization`);
+
       // Get latest scan for each team member
       const memberIds = members?.map(m => m.user_id) || [];
+      
+      if (memberIds.length === 0) {
+        setTeamMembers([]);
+        return;
+      }
+
       const { data: latestScans, error: scansError } = await supabase
         .from('biometric_measurements')
         .select('user_id, created_at, wellness_index_score, ai_stress, ai_fatigue, ai_recovery, heart_rate')
@@ -91,7 +103,7 @@ export default function LeaderTeam() {
         };
       }) || [];
 
-      console.log('✅ Loaded team with', membersWithScans.length, 'members');
+      console.log('✅ Loaded team with', membersWithScans.length, 'members from same organization');
       setTeamMembers(membersWithScans);
     } catch (error) {
       console.error('Error loading team:', error);

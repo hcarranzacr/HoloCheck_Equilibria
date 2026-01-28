@@ -160,6 +160,56 @@ async def list_all_branding(
     ]
 
 
+@router.get("/by-organization/{organization_id}", response_model=OrganizationBrandingResponse)
+async def get_branding_by_organization_id(
+    organization_id: str, 
+    db: AsyncSession = Depends(get_db)
+):
+    """Get organization branding by organization_id (public endpoint for post-login branding detection)"""
+    result = await db.execute(
+        """
+        SELECT ob.*, o.name as organization_name
+        FROM organization_branding ob
+        LEFT JOIN organizations o ON ob.organization_id = o.id
+        WHERE ob.organization_id = :organization_id
+        """,
+        {"organization_id": organization_id}
+    )
+    branding = result.fetchone()
+    
+    if not branding:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Branding for organization '{organization_id}' not found"
+        )
+    
+    return {
+        "id": str(branding.id),
+        "organization_id": str(branding.organization_id),
+        "organization_name": branding.organization_name,
+        "logo_url": branding.logo_url,
+        "primary_color": branding.primary_color,
+        "slogan": branding.slogan,
+        "message": branding.message,
+        "slug": branding.slug,
+        "secondary_color": branding.secondary_color,
+        "favicon_url": branding.favicon_url,
+        "font_family": branding.font_family,
+        "background_image_url": branding.background_image_url,
+        "login_message": branding.login_message,
+        "dashboard_welcome_text": branding.dashboard_welcome_text,
+        "meta_description": branding.meta_description,
+        "contact_email": branding.contact_email,
+        "contact_phone": branding.contact_phone,
+        "social_links": branding.social_links,
+        "custom_terms_url": branding.custom_terms_url,
+        "custom_privacy_url": branding.custom_privacy_url,
+        "login_layout_style": branding.login_layout_style or 'centered',
+        "branding_mode": branding.branding_mode or 'custom',
+        "created_at": branding.created_at
+    }
+
+
 @router.get("/slug/{slug}", response_model=OrganizationBrandingResponse)
 async def get_branding_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     """Get organization branding by slug (public endpoint for login page)"""
