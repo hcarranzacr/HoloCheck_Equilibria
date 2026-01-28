@@ -1,134 +1,64 @@
-"""
-Authentication dependencies for FastAPI routes
-SIMPLIFIED: No JWT decoding, just verify token exists
-"""
-import logging
-from typing import Optional
-
-from fastapi import Depends, HTTPException, status, Header
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.database import get_db
+import base64
+import json
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from schemas.auth import UserResponse
+import logging
 
 logger = logging.getLogger(__name__)
-
+security = HTTPBearer()
 
 async def get_current_user(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> UserResponse:
     """
-    Simplified authentication - just verify token exists
-    Frontend already validated with Supabase, we trust it
+    Extract user info from JWT token without decoding/verification.
+    Parses the payload manually from base64.
     """
-    if not authorization:
-        logger.error("❌ AUTH - No authorization header")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No authorization header provided"
-        )
-    
-    if not authorization.startswith("Bearer "):
-        logger.error("❌ AUTH - Invalid authorization format")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization format"
-        )
-    
-    token = authorization.replace("Bearer ", "")
-    
-    if not token or len(token) < 10:
-        logger.error("❌ AUTH - Token too short or empty")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token format"
-        )
-    
-    # Extract user_id from token WITHOUT decoding
-    # Supabase JWT format: header.payload.signature
-    # payload is base64 encoded JSON with "sub" field
     try:
-        import base64
-        import json
+        token = credentials.credentials
         
-        # Split token and get payload (middle part)
+        # Split JWT: header.payload.signature
         parts = token.split('.')
         if len(parts) != 3:
-            raise ValueError("Invalid JWT format")
+            raise HTTPException(status_code=401, detail="Invalid token format")
         
-        # Decode payload (add padding if needed)
-        payload_b64 = parts[1]
-        padding = 4 - (len(payload_b64) % 4)
+        # Decode payload from base64
+        payload_encoded = parts[1]
+        # Add padding if needed
+        padding = 4 - len(payload_encoded) % 4
         if padding != 4:
-            payload_b64 += '=' * padding
+            payload_encoded += '=' * padding
         
-        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload_bytes = base64.urlsafe_b64decode(payload_encoded)
         payload = json.loads(payload_bytes)
         
+        # Extract user info from payload
         user_id = payload.get("sub")
-        email = payload.get("email", "")
-        role = payload.get("role", "user")
-        
-        logger.info(f"✅ AUTH - Extracted user_id: {user_id}, email: {email}")
-        
         if not user_id:
-            raise ValueError("No user_id in token")
-        
-        # Check if user_profile exists in database
-        from models.user_profiles import UserProfile
-        from sqlalchemy import select
-        
-        query = select(UserProfile).where(UserProfile.user_id == str(user_id))
-        result = await db.execute(query)
-        user_profile = result.scalar_one_or_none()
-        
-        if user_profile:
-            logger.info(f"✅ AUTH - Found profile: {user_profile.full_name}")
-            organization_id = str(user_profile.organization_id) if user_profile.organization_id else None
-        else:
-            logger.warning(f"⚠️ AUTH - No profile for user_id: {user_id}")
-            organization_id = None
+            raise HTTPException(status_code=401, detail="Missing user ID in token")
         
         return UserResponse(
-            id=str(user_id),
-            email=email,
-            name=email.split('@')[0],  # Use email prefix as name
-            role=role,
-            organization_id=organization_id
+            id=user_id,
+            email=payload.get("email", ""),
+            role=payload.get("user_metadata", {}).get("role", "employee"),
+            organization_id=payload.get("user_metadata", {}).get("organization_id")
         )
-        
+    except json.JSONDecodeError as e:
+        logger.error(f"JWT payload decode error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token payload")
     except Exception as e:
-        logger.error(f"❌ AUTH - Token parsing error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}"
-        )
+        logger.error(f"Authentication error: {e}")
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 
 async def get_current_user_optional(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> Optional[UserResponse]:
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> UserResponse | None:
     """
-    Optional authentication - returns None if no valid token instead of raising error
+    Optional authentication - returns None if token is invalid.
     """
-    if not authorization:
-        return None
-    
     try:
-        return await get_current_user(authorization, db)
+        return await get_current_user(credentials)
     except HTTPException:
         return None
-    except Exception as e:
-        logger.warning(f"⚠️ Optional auth failed: {e}")
-        return None
-
-
-async def get_current_active_user(
-    current_user: UserResponse = Depends(get_current_user),
-) -> UserResponse:
-    """
-    Ensure the current user is active
-    """
-    return current_user
