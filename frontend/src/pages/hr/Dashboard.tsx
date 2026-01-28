@@ -24,7 +24,9 @@ import {
   Target,
   Zap,
   Moon,
-  Calendar
+  Calendar,
+  BarChart3,
+  TrendingDown as TrendingDownIcon
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -79,10 +81,23 @@ interface EmployeeAtRisk {
 interface DepartmentInsight {
   id: string;
   department_id: string;
-  insight_summary: string;
-  wellness_trend: string;
-  stress_level_flag: string;
+  summary: string;
   created_at: string;
+  analysis_period: string;
+  employee_count: number;
+  avg_stress: number;
+  avg_fatigue: number;
+  avg_cognitive_load: number;
+  avg_recovery: number;
+  avg_bio_age_gap: number;
+  burnout_risk_score: number;
+  wellness_index: number;
+  insight_summary: string;
+  stress_level_flag: string;
+  burnout_risk_flag: string;
+  wellness_trend: string;
+  risk_score: number;
+  percentile_in_org: number;
   department_name?: string;
 }
 
@@ -218,7 +233,7 @@ export default function HRDashboard() {
         await logActivity('at_risk_loaded', { count: riskData?.length }, 'info');
       }
 
-      // Load department insights
+      // Load department insights - ALL 19 FIELDS
       if (departments && departments.length > 0) {
         const deptIds = departments.map(d => d.id);
         
@@ -227,10 +242,23 @@ export default function HRDashboard() {
           .select(`
             id,
             department_id,
-            insight_summary,
-            wellness_trend,
-            stress_level_flag,
+            summary,
             created_at,
+            analysis_period,
+            employee_count,
+            avg_stress,
+            avg_fatigue,
+            avg_cognitive_load,
+            avg_recovery,
+            avg_bio_age_gap,
+            burnout_risk_score,
+            wellness_index,
+            insight_summary,
+            stress_level_flag,
+            burnout_risk_flag,
+            wellness_trend,
+            risk_score,
+            percentile_in_org,
             departments!inner(name)
           `)
           .in('department_id', deptIds)
@@ -534,7 +562,7 @@ export default function HRDashboard() {
         </div>
       )}
 
-      {/* Insights Card */}
+      {/* Organizational Insights Card */}
       {orgInsight?.insight_summary && (
         <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-purple-50">
           <CardHeader>
@@ -609,8 +637,12 @@ export default function HRDashboard() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="departments" className="space-y-4">
+      <Tabs defaultValue="insights" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="insights">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Insights Departamentales ({deptInsights.length})
+          </TabsTrigger>
           <TabsTrigger value="departments">
             <Building2 className="h-4 w-4 mr-2" />
             Departamentos ({deptMetrics.length})
@@ -619,15 +651,126 @@ export default function HRDashboard() {
             <AlertTriangle className="h-4 w-4 mr-2" />
             En Riesgo ({employeesAtRisk.length})
           </TabsTrigger>
-          <TabsTrigger value="insights">
-            <Sparkles className="h-4 w-4 mr-2" />
-            Insights ({deptInsights.length})
-          </TabsTrigger>
           <TabsTrigger value="programs">
             <Gift className="h-4 w-4 mr-2" />
             Programas ({loyaltyPrograms.length})
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="insights" className="space-y-4">
+          {deptInsights.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No hay insights departamentales disponibles</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {deptInsights.map((insight) => (
+                <Card key={insight.id} className="border-l-4 border-l-purple-500 hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-purple-600" />
+                        {insight.department_name}
+                      </div>
+                      <Badge variant="outline" className="text-sm">
+                        {insight.employee_count} colaboradores
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Período: {insight.analysis_period}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Insight Summary - PROMINENT */}
+                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                      <p className="text-base font-medium text-blue-900">{insight.insight_summary}</p>
+                    </div>
+
+                    {/* Key Metrics Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Índice de Bienestar</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={insight.wellness_index} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.wellness_index?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Estrés Promedio</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.avg_stress || '0')} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.avg_stress?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Fatiga Promedio</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.avg_fatigue || '0')} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.avg_fatigue?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Carga Cognitiva</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.avg_cognitive_load || '0')} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.avg_cognitive_load?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Recuperación</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.avg_recovery || '0')} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.avg_recovery?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Brecha Edad Bio.</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={Math.abs(parseFloat(insight.avg_bio_age_gap || '0'))} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.avg_bio_age_gap?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Riesgo Burnout</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.burnout_risk_score || '0') * 10} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.burnout_risk_score?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Puntuación Riesgo</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={parseFloat(insight.risk_score || '0') * 10} className="flex-1 h-2" />
+                          <span className="text-sm font-bold">{insight.risk_score?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Flags and Trends */}
+                    <div className="flex flex-wrap gap-3">
+                      <Badge variant={getFlagColor(insight.stress_level_flag)} className="text-sm">
+                        Estrés: {insight.stress_level_flag}
+                      </Badge>
+                      <Badge variant={getFlagColor(insight.burnout_risk_flag)} className="text-sm">
+                        Burnout: {insight.burnout_risk_flag}
+                      </Badge>
+                      <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full">
+                        {getTrendIcon(insight.wellness_trend)}
+                        <span className="text-sm font-medium">{insight.wellness_trend}</span>
+                      </div>
+                      <Badge variant="outline" className="text-sm">
+                        Percentil: {insight.percentile_in_org}%
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="departments" className="space-y-4">
           <Card>
@@ -757,42 +900,6 @@ export default function HRDashboard() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="insights" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {deptInsights.length === 0 ? (
-              <Card className="col-span-2">
-                <CardContent className="py-12 text-center">
-                  <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No hay insights disponibles</p>
-                </CardContent>
-              </Card>
-            ) : (
-              deptInsights.map((insight) => (
-                <Card key={insight.id} className="border-l-4 border-l-purple-500 hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-purple-600" />
-                      {insight.department_name}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-sm">{insight.insight_summary}</p>
-                    <div className="flex gap-2">
-                      <Badge variant={getFlagColor(insight.stress_level_flag)}>
-                        {insight.stress_level_flag}
-                      </Badge>
-                      <div className="flex items-center gap-1">
-                        {getTrendIcon(insight.wellness_trend)}
-                        <span className="text-xs">{insight.wellness_trend}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
         </TabsContent>
 
         <TabsContent value="programs" className="space-y-4">
