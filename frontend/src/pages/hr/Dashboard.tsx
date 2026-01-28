@@ -16,7 +16,7 @@ import {
   BarChart3,
   RefreshCw
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 interface OrganizationMetrics {
@@ -59,6 +59,25 @@ interface EmployeeAtRisk {
   scan_count: number;
 }
 
+// Centralized logging function
+async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('system_logs').insert({
+      user_id: user?.id,
+      action,
+      details: JSON.stringify(details),
+      level,
+      created_at: new Date().toISOString()
+    });
+    
+    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
+    console.log(`${emoji} [HR Dashboard] ${action}:`, details);
+  } catch (error) {
+    console.error('❌ [HR Dashboard] Error logging activity:', error);
+  }
+}
+
 export default function HRDashboard() {
   const [orgMetrics, setOrgMetrics] = useState<OrganizationMetrics | null>(null);
   const [deptMetrics, setDeptMetrics] = useState<DepartmentMetrics[]>([]);
@@ -71,29 +90,153 @@ export default function HRDashboard() {
   const loadDashboardData = async () => {
     try {
       setError(null);
-      
-      // Load organization-wide metrics
-      const orgResponse = await apiClient.get('/api/v1/organization-metrics/summary');
-      setOrgMetrics(orgResponse.data);
+      console.log('📊 [HR Dashboard] Loading data...');
+      await logActivity('dashboard_load_start', { dashboard: 'hr' }, 'info');
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user's organization
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('❌ [HR Dashboard] Error loading profile:', profileError);
+        await logActivity('profile_load_error', { error: profileError.message }, 'error');
+        throw new Error('Error loading user profile');
+      }
+
+      const orgId = profile.organization_id;
+      console.log('✅ [HR Dashboard] User organization:', orgId);
+
+      // Load organization-wide metrics from organization_usage_summary
+      const { data: orgSummary, error: orgError } = await supabase
+        .from('organization_usage_summary')
+        .select('*')
+        .eq('organization_id', orgId)
+        .single();
+
+      if (orgError) {
+        console.error('❌ [HR Dashboard] Error loading org metrics:', orgError);
+        await logActivity('org_metrics_load_error', { error: orgError.message }, 'error');
+      } else {
+        // Calculate organization metrics from usage summary and other sources
+        const { data: allUsers, error: usersError } = await supabase
+          .from('user_profiles')
+          .select('user_id, department_id')
+          .eq('organization_id', orgId);
+
+        const { data: allDepts, error: deptsError } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('organization_id', orgId);
+
+        const { data: scannedUsers, error: scansError } = await supabase
+          .from('biometric_measurements')
+          .select('user_id')
+          .in('user_id', allUsers?.map(u => u.user_id) || []);
+
+        const uniqueScannedUsers = new Set(scannedUsers?.map(s => s.user_id) || []).size;
+
+        // Get average stress from recent scans
+        const { data: recentScans, error: recentError } = await supabase
+          .from('biometric_measurements')
+          .select('ai_stress, ai_energy, ai_focus, risk_level')
+          .in('user_id', allUsers?.map(u => u.user_id) || [])
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        const avgStress = recentScans?.length > 0
+          ? recentScans.reduce((acc, s) => acc + (s.ai_stress || 0), 0) / recentScans.length
+          : 0;
+        const avgEnergy = recentScans?.length > 0
+          ? recentScans.reduce((acc, s) => acc + (s.ai_energy || 0), 0) / recentScans.length
+          : 0;
+        const avgFocus = recentScans?.length > 0
+          ? recentScans.reduce((acc, s) => acc + (s.ai_focus || 0), 0) / recentScans.length
+          : 0;
+
+        const highRisk = recentScans?.filter(s => s.risk_level === 'high').length || 0;
+        const mediumRisk = recentScans?.filter(s => s.risk_level === 'medium').length || 0;
+        const lowRisk = recentScans?.filter(s => s.risk_level === 'low').length || 0;
+
+        setOrgMetrics({
+          total_employees: allUsers?.length || 0,
+          total_departments: allDepts?.length || 0,
+          scanned_employees: uniqueScannedUsers,
+          avg_stress_level: avgStress,
+          avg_energy_level: avgEnergy,
+          avg_focus_level: avgFocus,
+          high_risk_count: highRisk,
+          medium_risk_count: mediumRisk,
+          low_risk_count: lowRisk
+        });
+        console.log('✅ [HR Dashboard] Org metrics calculated');
+        await logActivity('org_metrics_loaded', { organization_id: orgId }, 'info');
+      }
 
       // Load all department metrics
-      const deptResponse = await apiClient.get('/api/v1/department-metrics/all');
-      setDeptMetrics(deptResponse.data.items || []);
+      const { data: deptData, error: deptError } = await supabase
+        .from('vw_current_department_metrics')
+        .select('*')
+        .order('department_name');
+
+      if (deptError) {
+        console.error('❌ [HR Dashboard] Error loading department metrics:', deptError);
+        await logActivity('dept_metrics_load_error', { error: deptError.message }, 'error');
+      } else {
+        setDeptMetrics(deptData || []);
+        console.log('✅ [HR Dashboard] Department metrics loaded:', deptData?.length);
+        await logActivity('dept_metrics_loaded', { count: deptData?.length }, 'info');
+      }
 
       // Load organization insights
-      const insightsResponse = await apiClient.get('/api/v1/organization-insights', {
-        params: { limit: 10, sort: '-created_at' }
-      });
-      setInsights(insightsResponse.data.items || []);
+      const { data: insightsData, error: insightsError } = await supabase
+        .from('organization_insights')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-      // Load employees at risk
-      const riskResponse = await apiClient.get('/api/v1/employees/at-risk');
-      setAtRiskEmployees(riskResponse.data.items || []);
+      if (insightsError) {
+        console.error('❌ [HR Dashboard] Error loading insights:', insightsError);
+        await logActivity('insights_load_error', { error: insightsError.message }, 'error');
+      } else {
+        setInsights(insightsData || []);
+        console.log('✅ [HR Dashboard] Insights loaded:', insightsData?.length);
+        await logActivity('insights_loaded', { count: insightsData?.length }, 'info');
+      }
+
+      // Load employees at risk from view
+      const { data: riskData, error: riskError } = await supabase
+        .from('vw_employees_at_risk')
+        .select('*')
+        .order('avg_stress_level', { ascending: false })
+        .limit(20);
+
+      if (riskError) {
+        console.error('❌ [HR Dashboard] Error loading at-risk employees:', riskError);
+        await logActivity('at_risk_load_error', { error: riskError.message }, 'error');
+      } else {
+        setAtRiskEmployees(riskData || []);
+        console.log('✅ [HR Dashboard] At-risk employees loaded:', riskData?.length);
+        await logActivity('at_risk_loaded', { count: riskData?.length }, 'info');
+      }
+
+      await logActivity('dashboard_load_complete', { dashboard: 'hr' }, 'info');
 
     } catch (err: any) {
-      const errorMsg = err?.response?.data?.detail || err?.message || 'Error loading dashboard data';
+      const errorMsg = err?.message || 'Error loading dashboard data';
+      console.error('❌ [HR Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
+      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -105,6 +248,7 @@ export default function HRDashboard() {
   }, []);
 
   const handleRefresh = () => {
+    console.log('🔄 [HR Dashboard] Refreshing data...');
     setRefreshing(true);
     loadDashboardData();
   };

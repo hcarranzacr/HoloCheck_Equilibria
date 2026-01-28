@@ -15,7 +15,7 @@ import {
   BarChart3,
   RefreshCw
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 interface DepartmentMetrics {
@@ -51,6 +51,25 @@ interface LatestScan {
   risk_level: string;
 }
 
+// Centralized logging function
+async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('system_logs').insert({
+      user_id: user?.id,
+      action,
+      details: JSON.stringify(details),
+      level,
+      created_at: new Date().toISOString()
+    });
+    
+    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
+    console.log(`${emoji} [Leader Dashboard] ${action}:`, details);
+  } catch (error) {
+    console.error('❌ [Leader Dashboard] Error logging activity:', error);
+  }
+}
+
 export default function LeaderDashboard() {
   const [metrics, setMetrics] = useState<DepartmentMetrics | null>(null);
   const [insights, setInsights] = useState<DepartmentInsight[]>([]);
@@ -58,29 +77,127 @@ export default function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [userDepartmentId, setUserDepartmentId] = useState<number | null>(null);
 
   const loadDashboardData = async () => {
     try {
       setError(null);
-      
-      // Load department metrics
-      const metricsResponse = await apiClient.get('/api/v1/department-metrics/current');
-      setMetrics(metricsResponse.data);
+      console.log('📊 [Leader Dashboard] Loading data...');
+      await logActivity('dashboard_load_start', { dashboard: 'leader' }, 'info');
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user's department
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('department_id, departments(id, name)')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('❌ [Leader Dashboard] Error loading profile:', profileError);
+        await logActivity('profile_load_error', { error: profileError.message }, 'error');
+        throw new Error('Error loading user profile');
+      }
+
+      const deptId = profile.department_id;
+      setUserDepartmentId(deptId);
+      console.log('✅ [Leader Dashboard] User department:', deptId);
+
+      // Load department metrics from view
+      const { data: metricsData, error: metricsError } = await supabase
+        .from('vw_current_department_metrics')
+        .select('*')
+        .eq('department_id', deptId)
+        .single();
+
+      if (metricsError) {
+        console.error('❌ [Leader Dashboard] Error loading metrics:', metricsError);
+        await logActivity('metrics_load_error', { error: metricsError.message }, 'error');
+      } else {
+        setMetrics(metricsData);
+        console.log('✅ [Leader Dashboard] Metrics loaded:', metricsData);
+        await logActivity('metrics_loaded', { department_id: deptId, metrics: metricsData }, 'info');
+      }
 
       // Load department insights
-      const insightsResponse = await apiClient.get('/api/v1/department-insights', {
-        params: { limit: 10, sort: '-created_at' }
-      });
-      setInsights(insightsResponse.data.items || []);
+      const { data: insightsData, error: insightsError } = await supabase
+        .from('department_insights')
+        .select('*')
+        .eq('department_id', deptId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-      // Load latest scans from team
-      const scansResponse = await apiClient.get('/api/v1/biometric-measurements/latest-by-department');
-      setLatestScans(scansResponse.data.items || []);
+      if (insightsError) {
+        console.error('❌ [Leader Dashboard] Error loading insights:', insightsError);
+        await logActivity('insights_load_error', { error: insightsError.message }, 'error');
+      } else {
+        setInsights(insightsData || []);
+        console.log('✅ [Leader Dashboard] Insights loaded:', insightsData?.length);
+        await logActivity('insights_loaded', { count: insightsData?.length }, 'info');
+      }
+
+      // Load latest scans from department members
+      const { data: deptUsers, error: usersError } = await supabase
+        .from('user_profiles')
+        .select('user_id')
+        .eq('department_id', deptId);
+
+      if (usersError) {
+        console.error('❌ [Leader Dashboard] Error loading department users:', usersError);
+        await logActivity('users_load_error', { error: usersError.message }, 'error');
+      } else {
+        const userIds = deptUsers?.map(u => u.user_id) || [];
+        
+        if (userIds.length > 0) {
+          const { data: scansData, error: scansError } = await supabase
+            .from('biometric_measurements')
+            .select(`
+              user_id,
+              created_at,
+              ai_stress,
+              ai_energy,
+              ai_focus,
+              risk_level,
+              user_profiles!inner(full_name)
+            `)
+            .in('user_id', userIds)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          if (scansError) {
+            console.error('❌ [Leader Dashboard] Error loading scans:', scansError);
+            await logActivity('scans_load_error', { error: scansError.message }, 'error');
+          } else {
+            const formattedScans = scansData?.map(scan => ({
+              user_id: scan.user_id,
+              full_name: (scan.user_profiles as any)?.full_name || 'Unknown',
+              scan_date: scan.created_at,
+              stress_level: scan.ai_stress || 0,
+              energy_level: scan.ai_energy || 0,
+              focus_level: scan.ai_focus || 0,
+              risk_level: scan.risk_level || 'unknown'
+            })) || [];
+            
+            setLatestScans(formattedScans);
+            console.log('✅ [Leader Dashboard] Scans loaded:', formattedScans.length);
+            await logActivity('scans_loaded', { count: formattedScans.length }, 'info');
+          }
+        }
+      }
+
+      await logActivity('dashboard_load_complete', { dashboard: 'leader' }, 'info');
 
     } catch (err: any) {
-      const errorMsg = err?.response?.data?.detail || err?.message || 'Error loading dashboard data';
+      const errorMsg = err?.message || 'Error loading dashboard data';
+      console.error('❌ [Leader Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
+      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -92,6 +209,7 @@ export default function LeaderDashboard() {
   }, []);
 
   const handleRefresh = () => {
+    console.log('🔄 [Leader Dashboard] Refreshing data...');
     setRefreshing(true);
     loadDashboardData();
   };

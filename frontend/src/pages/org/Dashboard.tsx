@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Clock
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 interface UsageSummary {
@@ -72,6 +72,25 @@ interface OrganizationSubscription {
   end_date: string;
 }
 
+// Centralized logging function
+async function logActivity(action: string, details: any, level: 'info' | 'warning' | 'error' = 'info') {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('system_logs').insert({
+      user_id: user?.id,
+      action,
+      details: JSON.stringify(details),
+      level,
+      created_at: new Date().toISOString()
+    });
+    
+    const emoji = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✅';
+    console.log(`${emoji} [Org Admin Dashboard] ${action}:`, details);
+  } catch (error) {
+    console.error('❌ [Org Admin Dashboard] Error logging activity:', error);
+  }
+}
+
 export default function OrgDashboard() {
   const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([]);
   const [latestScans, setLatestScans] = useState<LatestScanByUser[]>([]);
@@ -86,43 +105,138 @@ export default function OrgDashboard() {
   const loadDashboardData = async () => {
     try {
       setError(null);
-      
-      // Load monthly usage summary
-      const summaryResponse = await apiClient.get('/api/v1/usage/monthly-summary', {
-        params: { limit: 6 }
-      });
-      setUsageSummary(summaryResponse.data.items || []);
+      console.log('📊 [Org Admin Dashboard] Loading data...');
+      await logActivity('dashboard_load_start', { dashboard: 'org_admin' }, 'info');
 
-      // Load latest scans by user
-      const scansResponse = await apiClient.get('/api/v1/usage/latest-scans-by-user', {
-        params: { limit: 10 }
-      });
-      setLatestScans(scansResponse.data.items || []);
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user's organization
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('❌ [Org Admin Dashboard] Error loading profile:', profileError);
+        await logActivity('profile_load_error', { error: profileError.message }, 'error');
+        throw new Error('Error loading user profile');
+      }
+
+      const orgId = profile.organization_id;
+      console.log('✅ [Org Admin Dashboard] User organization:', orgId);
+
+      // Load monthly usage summary from view
+      const { data: summaryData, error: summaryError } = await supabase
+        .from('vw_usage_monthly_summary')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('month', { ascending: false })
+        .limit(6);
+
+      if (summaryError) {
+        console.error('❌ [Org Admin Dashboard] Error loading usage summary:', summaryError);
+        await logActivity('usage_summary_load_error', { error: summaryError.message }, 'error');
+      } else {
+        setUsageSummary(summaryData || []);
+        console.log('✅ [Org Admin Dashboard] Usage summary loaded:', summaryData?.length);
+        await logActivity('usage_summary_loaded', { count: summaryData?.length }, 'info');
+      }
+
+      // Load latest scans by user from view
+      const { data: scansData, error: scansError } = await supabase
+        .from('vw_latest_scans_by_user')
+        .select('*')
+        .order('last_scan_date', { ascending: false })
+        .limit(10);
+
+      if (scansError) {
+        console.error('❌ [Org Admin Dashboard] Error loading latest scans:', scansError);
+        await logActivity('latest_scans_load_error', { error: scansError.message }, 'error');
+      } else {
+        setLatestScans(scansData || []);
+        console.log('✅ [Org Admin Dashboard] Latest scans loaded:', scansData?.length);
+        await logActivity('latest_scans_loaded', { count: scansData?.length }, 'info');
+      }
 
       // Load user scan usage
-      const userUsageResponse = await apiClient.get('/api/v1/usage/user-scan-usage', {
-        params: { limit: 10, sort: '-total_scans' }
-      });
-      setUserUsage(userUsageResponse.data.items || []);
+      const { data: userUsageData, error: userUsageError } = await supabase
+        .from('user_scan_usage')
+        .select('*')
+        .order('total_scans', { ascending: false })
+        .limit(10);
+
+      if (userUsageError) {
+        console.error('❌ [Org Admin Dashboard] Error loading user usage:', userUsageError);
+        await logActivity('user_usage_load_error', { error: userUsageError.message }, 'error');
+      } else {
+        setUserUsage(userUsageData || []);
+        console.log('✅ [Org Admin Dashboard] User usage loaded:', userUsageData?.length);
+        await logActivity('user_usage_loaded', { count: userUsageData?.length }, 'info');
+      }
 
       // Load subscription usage logs
-      const logsResponse = await apiClient.get('/api/v1/usage/subscription-logs', {
-        params: { limit: 20, sort: '-created_at' }
-      });
-      setUsageLogs(logsResponse.data.items || []);
+      const { data: logsData, error: logsError } = await supabase
+        .from('subscription_usage_logs')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (logsError) {
+        console.error('❌ [Org Admin Dashboard] Error loading usage logs:', logsError);
+        await logActivity('usage_logs_load_error', { error: logsError.message }, 'error');
+      } else {
+        setUsageLogs(logsData || []);
+        console.log('✅ [Org Admin Dashboard] Usage logs loaded:', logsData?.length);
+        await logActivity('usage_logs_loaded', { count: logsData?.length }, 'info');
+      }
 
       // Load organization usage summary
-      const orgResponse = await apiClient.get('/api/v1/usage/organization-summary');
-      setOrgSummary(orgResponse.data);
+      const { data: orgData, error: orgError } = await supabase
+        .from('organization_usage_summary')
+        .select('*')
+        .eq('organization_id', orgId)
+        .single();
+
+      if (orgError) {
+        console.error('❌ [Org Admin Dashboard] Error loading org summary:', orgError);
+        await logActivity('org_summary_load_error', { error: orgError.message }, 'error');
+      } else {
+        setOrgSummary(orgData);
+        console.log('✅ [Org Admin Dashboard] Org summary loaded:', orgData);
+        await logActivity('org_summary_loaded', { organization_id: orgId }, 'info');
+      }
 
       // Load organization subscription
-      const subResponse = await apiClient.get('/api/v1/subscriptions/current');
-      setSubscription(subResponse.data);
+      const { data: subData, error: subError } = await supabase
+        .from('organization_subscriptions')
+        .select('*')
+        .eq('organization_id', orgId)
+        .eq('status', 'active')
+        .single();
+
+      if (subError) {
+        console.error('❌ [Org Admin Dashboard] Error loading subscription:', subError);
+        await logActivity('subscription_load_error', { error: subError.message }, 'error');
+      } else {
+        setSubscription(subData);
+        console.log('✅ [Org Admin Dashboard] Subscription loaded:', subData);
+        await logActivity('subscription_loaded', { plan: subData?.plan_name }, 'info');
+      }
+
+      await logActivity('dashboard_load_complete', { dashboard: 'org_admin' }, 'info');
 
     } catch (err: any) {
-      const errorMsg = err?.response?.data?.detail || err?.message || 'Error loading dashboard data';
+      const errorMsg = err?.message || 'Error loading dashboard data';
+      console.error('❌ [Org Admin Dashboard] Error:', errorMsg);
       setError(errorMsg);
       toast.error(errorMsg);
+      await logActivity('dashboard_load_error', { error: errorMsg }, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -134,6 +248,7 @@ export default function OrgDashboard() {
   }, []);
 
   const handleRefresh = () => {
+    console.log('🔄 [Org Admin Dashboard] Refreshing data...');
     setRefreshing(true);
     loadDashboardData();
   };
