@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from schemas.auth import UserResponse
-from core.supabase_client import get_supabase_client_with_token
+from core.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,14 @@ async def get_bearer_token_optional(
 async def get_current_user(token: str = Depends(get_bearer_token)) -> UserResponse:
     """Dependency to get current authenticated user via Supabase JWT token."""
     try:
-        # Get Supabase client with user's token
-        supabase = get_supabase_client_with_token(token)
+        # Get Supabase client
+        supabase = get_supabase_client()
         
-        # Verify token with Supabase
+        # Verify token with Supabase - use the token directly
         user_response = supabase.auth.get_user(token)
         
         if not user_response or not user_response.user:
+            logger.warning("Token validation failed - no user returned")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token"
@@ -70,6 +71,8 @@ async def get_current_user(token: str = Depends(get_bearer_token)) -> UserRespon
                 user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
                 logger.debug("Failed to parse last_login for user hash: %s", user_hash)
         
+        logger.info(f"✅ User authenticated: {email} (role: {role})")
+        
         return UserResponse(
             id=user_id,
             email=email,
@@ -81,7 +84,7 @@ async def get_current_user(token: str = Depends(get_bearer_token)) -> UserRespon
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"Error verifying token with Supabase: {exc}")
+        logger.error(f"❌ Error verifying token with Supabase: {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token"
@@ -94,8 +97,8 @@ async def get_current_user_optional(token: Optional[str] = Depends(get_bearer_to
         return None
     
     try:
-        # Get Supabase client with user's token
-        supabase = get_supabase_client_with_token(token)
+        # Get Supabase client
+        supabase = get_supabase_client()
         
         # Verify token with Supabase
         user_response = supabase.auth.get_user(token)
