@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,13 @@ import {
   RefreshCw,
   Clock as ClockIcon,
   CheckCircle,
-  XCircle
+  XCircle,
+  Building2,
+  MessageSquare,
+  TrendingUp,
+  FileText,
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -58,11 +65,27 @@ interface UserScanUsage {
   last_scan_date: string;
 }
 
+interface OrgStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalDepartments: number;
+  totalMeasurements: number;
+  totalPrompts: number;
+}
+
 export default function OrgDashboard() {
+  const navigate = useNavigate();
   const [subscription, setSubscription] = useState<OrganizationSubscription | null>(null);
   const [usageSummaries, setUsageSummaries] = useState<OrganizationUsageSummary[]>([]);
   const [currentMonthUsage, setCurrentMonthUsage] = useState<OrganizationUsageSummary | null>(null);
   const [userUsage, setUserUsage] = useState<UserScanUsage[]>([]);
+  const [orgStats, setOrgStats] = useState<OrgStats>({
+    totalUsers: 0,
+    activeUsers: 0,
+    totalDepartments: 0,
+    totalMeasurements: 0,
+    totalPrompts: 0
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,6 +114,7 @@ export default function OrgDashboard() {
       }
 
       const orgId = profile.organization_id;
+      console.log('✅ [Org Admin Dashboard] Organization ID:', orgId);
 
       // Load organization subscription
       const { data: subData, error: subError } = await supabase
@@ -102,8 +126,11 @@ export default function OrgDashboard() {
         .limit(1)
         .single();
 
-      if (!subError) {
+      if (!subError && subData) {
         setSubscription(subData);
+        console.log('✅ [Org Admin Dashboard] Subscription loaded');
+      } else {
+        console.log('⚠️ [Org Admin Dashboard] No active subscription found');
       }
 
       // Load usage summaries (last 6 months)
@@ -114,11 +141,12 @@ export default function OrgDashboard() {
         .order('month', { ascending: false })
         .limit(6);
 
-      if (!summariesError) {
-        setUsageSummaries(summariesData || []);
-        if (summariesData && summariesData.length > 0) {
+      if (!summariesError && summariesData) {
+        setUsageSummaries(summariesData);
+        if (summariesData.length > 0) {
           setCurrentMonthUsage(summariesData[0]);
         }
+        console.log('✅ [Org Admin Dashboard] Usage summaries loaded:', summariesData.length);
       }
 
       // Load user scan usage
@@ -128,25 +156,72 @@ export default function OrgDashboard() {
           user_id,
           total_scans,
           last_scan_date,
-          user_profiles!inner(full_name, email, departments(name))
+          user_profiles!inner(full_name, email, organization_id, departments(name))
         `)
         .order('total_scans', { ascending: false })
         .limit(20);
 
-      if (!usageError) {
-        const formattedUsage = usageData?.map(item => ({
+      if (!usageError && usageData) {
+        // Filter by organization
+        const filteredUsage = usageData.filter((item: any) => 
+          item.user_profiles?.organization_id === orgId
+        );
+
+        const formattedUsage = filteredUsage.map((item: any) => ({
           user_id: item.user_id,
-          full_name: (item.user_profiles as any)?.full_name || 'Unknown',
-          email: (item.user_profiles as any)?.email || '',
-          department_name: (item.user_profiles as any)?.departments?.name || 'N/A',
+          full_name: item.user_profiles?.full_name || 'Unknown',
+          email: item.user_profiles?.email || '',
+          department_name: item.user_profiles?.departments?.name || 'N/A',
           total_scans: item.total_scans,
           last_scan_date: item.last_scan_date
-        })) || [];
+        }));
         
         setUserUsage(formattedUsage);
+        console.log('✅ [Org Admin Dashboard] User usage loaded:', formattedUsage.length);
       }
 
-      console.log('✅ [Org Admin Dashboard] Data loaded');
+      // Load organization statistics
+      // Count total users
+      const { count: usersCount, error: usersCountError } = await supabase
+        .from('user_profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', orgId);
+
+      // Count active users
+      const { count: activeUsersCount, error: activeUsersError } = await supabase
+        .from('user_profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('is_active', true);
+
+      // Count departments
+      const { count: deptsCount, error: deptsCountError } = await supabase
+        .from('departments')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('is_active', true);
+
+      // Count measurements
+      const { count: measurementsCount, error: measurementsError } = await supabase
+        .from('biometric_measurements')
+        .select('user_id', { count: 'exact', head: true });
+
+      // Count prompts
+      const { count: promptsCount, error: promptsError } = await supabase
+        .from('prompts')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('is_active', true);
+
+      setOrgStats({
+        totalUsers: usersCount || 0,
+        activeUsers: activeUsersCount || 0,
+        totalDepartments: deptsCount || 0,
+        totalMeasurements: measurementsCount || 0,
+        totalPrompts: promptsCount || 0
+      });
+
+      console.log('✅ [Org Admin Dashboard] Organization stats loaded');
       setLastUpdated(new Date());
 
     } catch (err: any) {
@@ -216,7 +291,7 @@ export default function OrgDashboard() {
         </Alert>
         <Button onClick={handleRefresh} className="mt-4">
           <RefreshCw className="mr-2 h-4 w-4" />
-          Retry
+          Reintentar
         </Button>
       </div>
     );
@@ -224,74 +299,247 @@ export default function OrgDashboard() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard de Administración</h1>
-          <p className="text-muted-foreground">
-            Uso del sistema y gestión de suscripción
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
-            <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
-          {lastUpdated && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ClockIcon className="h-4 w-4" />
-              <span>{lastUpdated.toLocaleTimeString('es-ES')}</span>
+      {/* Header with Gradient */}
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 bg-grid-white/10"></div>
+        <div className="relative z-10">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Dashboard de Administración</h1>
+              <p className="text-blue-100">
+                Gestión completa de tu organización
+              </p>
             </div>
-          )}
+            <div className="flex flex-col items-end gap-2">
+              <Button onClick={handleRefresh} disabled={refreshing} variant="secondary" size="sm">
+                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Actualizar
+              </Button>
+              {lastUpdated && (
+                <div className="flex items-center gap-2 text-sm text-blue-100">
+                  <ClockIcon className="h-4 w-4" />
+                  <span>{lastUpdated.toLocaleTimeString('es-ES')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+              <div className="text-3xl font-bold">{orgStats.totalUsers}</div>
+              <div className="text-sm text-blue-100">Usuarios Totales</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+              <div className="text-3xl font-bold">{orgStats.activeUsers}</div>
+              <div className="text-sm text-blue-100">Usuarios Activos</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+              <div className="text-3xl font-bold">{orgStats.totalDepartments}</div>
+              <div className="text-sm text-blue-100">Departamentos</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+              <div className="text-3xl font-bold">{orgStats.totalMeasurements}</div>
+              <div className="text-sm text-blue-100">Mediciones</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+              <div className="text-3xl font-bold">{orgStats.totalPrompts}</div>
+              <div className="text-sm text-blue-100">Prompts IA</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Access Cards */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Acceso Rápido</h2>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card 
+            className="border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/users')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <Users className="h-8 w-8 text-blue-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Usuarios</CardTitle>
+              <CardDescription>
+                Gestiona {orgStats.totalUsers} usuarios de la organización
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary">{orgStats.activeUsers} activos</Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-green-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/departments')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <Building2 className="h-8 w-8 text-green-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Departamentos</CardTitle>
+              <CardDescription>
+                Administra {orgStats.totalDepartments} departamentos
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-green-100 text-green-800">
+                  Crear nuevo
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-purple-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/insights')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <Sparkles className="h-8 w-8 text-purple-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Insights</CardTitle>
+              <CardDescription>
+                Análisis multi-organización y comparativas
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                  Ver análisis
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-orange-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/measurements')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <Activity className="h-8 w-8 text-orange-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Mediciones</CardTitle>
+              <CardDescription>
+                {orgStats.totalMeasurements} mediciones biométricas registradas
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                  Ver historial
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-teal-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/prompts')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <MessageSquare className="h-8 w-8 text-teal-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Prompts IA</CardTitle>
+              <CardDescription>
+                {orgStats.totalPrompts} prompts personalizados configurados
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-teal-100 text-teal-800">
+                  Gestionar
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="border-l-4 border-l-indigo-500 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate('/org/department-insights')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <TrendingUp className="h-8 w-8 text-indigo-600" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-lg mb-2">Insights Departamentales</CardTitle>
+              <CardDescription>
+                Análisis detallado por departamento
+              </CardDescription>
+              <div className="mt-3">
+                <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
+                  Ver detalles
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       {/* Subscription Status */}
       {subscription && (
-        <Card className="border-primary">
+        <Card className="border-l-4 border-l-blue-600">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
+                <CreditCard className="h-5 w-5 text-blue-600" />
                 Suscripción Activa
               </span>
-              <Badge variant={subscription.active ? 'default' : 'destructive'}>
+              <Badge variant={subscription.active ? 'default' : 'destructive'} className="bg-green-500">
                 {subscription.active ? 'Activa' : 'Inactiva'}
               </Badge>
             </CardTitle>
             <CardDescription>
-              Vigencia: {new Date(subscription.start_date).toLocaleDateString()} - {new Date(subscription.end_date).toLocaleDateString()}
+              Vigencia: {new Date(subscription.start_date).toLocaleDateString('es-ES')} - {new Date(subscription.end_date).toLocaleDateString('es-ES')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Días restantes</span>
-              <span className="text-2xl font-bold">{getDaysRemaining()}</span>
+            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+              <span className="text-sm font-medium text-blue-900">Días restantes</span>
+              <span className="text-3xl font-bold text-blue-600">{getDaysRemaining()}</span>
             </div>
             
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between text-sm mb-1">
-                  <span>Escaneos utilizados</span>
-                  <span className="font-medium">
+                  <span className="font-medium">Escaneos utilizados</span>
+                  <span className="font-bold text-blue-600">
                     {subscription.used_scans_total} / {subscription.scan_limit_per_user_month || '∞'}
                   </span>
                 </div>
                 <Progress 
-                  value={getUsagePercentage(subscription.used_scans_total, subscription.scan_limit_per_user_month)} 
+                  value={getUsagePercentage(subscription.used_scans_total, subscription.scan_limit_per_user_month)}
+                  className="h-3"
                 />
               </div>
 
               {subscription.dept_analysis_limit && (
                 <div>
                   <div className="flex justify-between text-sm mb-1">
-                    <span>Análisis departamentales</span>
-                    <span className="font-medium">
+                    <span className="font-medium">Análisis departamentales</span>
+                    <span className="font-bold text-green-600">
                       {subscription.used_dept_analyses} / {subscription.dept_analysis_limit}
                     </span>
                   </div>
                   <Progress 
-                    value={getUsagePercentage(subscription.used_dept_analyses, subscription.dept_analysis_limit)} 
+                    value={getUsagePercentage(subscription.used_dept_analyses, subscription.dept_analysis_limit)}
+                    className="h-3"
                   />
                 </div>
               )}
@@ -299,13 +547,14 @@ export default function OrgDashboard() {
               {subscription.org_analysis_limit && (
                 <div>
                   <div className="flex justify-between text-sm mb-1">
-                    <span>Análisis organizacionales</span>
-                    <span className="font-medium">
+                    <span className="font-medium">Análisis organizacionales</span>
+                    <span className="font-bold text-purple-600">
                       {subscription.used_org_analyses} / {subscription.org_analysis_limit}
                     </span>
                   </div>
                   <Progress 
-                    value={getUsagePercentage(subscription.used_org_analyses, subscription.org_analysis_limit)} 
+                    value={getUsagePercentage(subscription.used_org_analyses, subscription.org_analysis_limit)}
+                    className="h-3"
                   />
                 </div>
               )}
@@ -316,68 +565,77 @@ export default function OrgDashboard() {
 
       {/* Current Month Usage */}
       {currentMonthUsage && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Escaneos Este Mes</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{currentMonthUsage.total_scans}</div>
-              <p className="text-xs text-muted-foreground">
-                {currentMonthUsage.total_user_scans} por usuarios
-              </p>
-            </CardContent>
-          </Card>
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Uso del Mes Actual</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Escaneos Este Mes</CardTitle>
+                <Activity className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">{currentMonthUsage.total_scans}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {currentMonthUsage.total_user_scans} por usuarios
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Tokens IA Usados</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{currentMonthUsage.total_ai_tokens_used}</div>
-              <p className="text-xs text-muted-foreground">
-                {currentMonthUsage.total_prompts_used} prompts
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="border-l-4 border-l-purple-500">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Tokens IA Usados</CardTitle>
+                <BarChart3 className="h-4 w-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-purple-600">{currentMonthUsage.total_ai_tokens_used.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {currentMonthUsage.total_prompts_used} prompts
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Escaneos Válidos</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{currentMonthUsage.total_valid_scans}</div>
-              <p className="text-xs text-muted-foreground">
-                {currentMonthUsage.total_scans > 0 
-                  ? ((currentMonthUsage.total_valid_scans / currentMonthUsage.total_scans) * 100).toFixed(1)
-                  : 0}% tasa de éxito
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Escaneos Válidos</CardTitle>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">{currentMonthUsage.total_valid_scans}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {currentMonthUsage.total_scans > 0 
+                    ? ((currentMonthUsage.total_valid_scans / currentMonthUsage.total_scans) * 100).toFixed(1)
+                    : 0}% tasa de éxito
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Escaneos Inválidos</CardTitle>
-              <XCircle className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{currentMonthUsage.total_invalid_scans}</div>
-              <p className="text-xs text-muted-foreground">
-                Requieren revisión
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="border-l-4 border-l-red-500">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Escaneos Inválidos</CardTitle>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-red-600">{currentMonthUsage.total_invalid_scans}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Requieren revisión
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
       {/* Tabs */}
       <Tabs defaultValue="monthly" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="monthly">Uso Mensual</TabsTrigger>
-          <TabsTrigger value="users">Uso por Usuario</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="monthly">
+            <Calendar className="h-4 w-4 mr-2" />
+            Uso Mensual
+          </TabsTrigger>
+          <TabsTrigger value="users">
+            <Users className="h-4 w-4 mr-2" />
+            Uso por Usuario
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="monthly" className="space-y-4">
@@ -388,14 +646,17 @@ export default function OrgDashboard() {
             </CardHeader>
             <CardContent>
               {usageSummaries.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No hay datos de uso disponibles</p>
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No hay datos de uso disponibles</p>
+                </div>
               ) : (
                 <div className="space-y-4">
                   {usageSummaries.map((summary) => (
-                    <div key={summary.id} className="flex items-center justify-between border-b pb-4 last:border-0">
+                    <div key={summary.id} className="flex items-center justify-between border-b pb-4 last:border-0 hover:bg-muted/50 p-3 rounded-lg transition-colors">
                       <div className="space-y-1">
                         <p className="font-medium flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
+                          <Calendar className="h-4 w-4 text-blue-600" />
                           {new Date(summary.month).toLocaleDateString('es-ES', { year: 'numeric', month: 'long' })}
                         </p>
                         <p className="text-sm text-muted-foreground">
@@ -405,15 +666,15 @@ export default function OrgDashboard() {
                       <div className="text-right space-y-1">
                         <p className="text-sm font-medium">{summary.total_scans} escaneos totales</p>
                         <p className="text-xs text-muted-foreground">
-                          {summary.total_ai_tokens_used} tokens IA
+                          {summary.total_ai_tokens_used.toLocaleString()} tokens IA
                         </p>
                         <div className="flex gap-2 justify-end">
-                          <Badge variant="outline" className="text-xs">
-                            <CheckCircle className="h-3 w-3 mr-1" />
+                          <Badge variant="outline" className="text-xs bg-green-50">
+                            <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
                             {summary.total_valid_scans}
                           </Badge>
-                          <Badge variant="destructive" className="text-xs">
-                            <XCircle className="h-3 w-3 mr-1" />
+                          <Badge variant="outline" className="text-xs bg-red-50">
+                            <XCircle className="h-3 w-3 mr-1 text-red-600" />
                             {summary.total_invalid_scans}
                           </Badge>
                         </div>
@@ -434,25 +695,32 @@ export default function OrgDashboard() {
             </CardHeader>
             <CardContent>
               {userUsage.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No hay datos de uso por usuario</p>
+                <div className="text-center py-12">
+                  <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No hay datos de uso por usuario</p>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {userUsage.map((user) => (
-                    <div key={user.user_id} className="flex items-center justify-between border-b pb-3 last:border-0">
-                      <div className="space-y-1 flex-1">
-                        <p className="font-medium">{user.full_name}</p>
-                        <p className="text-sm text-muted-foreground">{user.email}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{user.department_name}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
+                  {userUsage.map((user, index) => (
+                    <div key={user.user_id} className="flex items-center justify-between border-b pb-3 last:border-0 hover:bg-muted/50 p-3 rounded-lg transition-colors">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold text-sm">
+                          {index + 1}
+                        </div>
+                        <div className="space-y-1 flex-1">
+                          <p className="font-medium">{user.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Building2 className="h-3 w-3" />
+                            <span>{user.department_name}</span>
+                            <span>•</span>
                             <ClockIcon className="h-3 w-3" />
-                            {new Date(user.last_scan_date).toLocaleDateString()}
-                          </span>
+                            <span>{new Date(user.last_scan_date).toLocaleDateString('es-ES')}</span>
+                          </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold">{user.total_scans}</div>
+                        <div className="text-2xl font-bold text-blue-600">{user.total_scans}</div>
                         <p className="text-xs text-muted-foreground">escaneos</p>
                       </div>
                     </div>
