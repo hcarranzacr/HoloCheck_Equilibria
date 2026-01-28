@@ -105,8 +105,8 @@ class DashboardServiceSupabase:
                 team_scans = []
                 logger.warning(f"⚠️ No team members found, no scans to retrieve")
             
-            # Get department insights - FIXED: use created_at instead of updated_at
-            insights_response = self.supabase.table('department_insights').select('*').eq('department_id', department_id).order('created_at', desc=True).limit(1).execute()
+            # Get department insights - FIXED: use updated_at instead of created_at
+            insights_response = self.supabase.table('department_insights').select('*').eq('department_id', department_id).order('updated_at', desc=True).limit(1).execute()
             dept_insights = insights_response.data[0] if insights_response.data else None
             
             # Calculate team averages
@@ -151,8 +151,8 @@ class DashboardServiceSupabase:
             organization_id = hr_user['organization_id']
             logger.info(f"🔒 Filtering HR data by organization_id={organization_id}")
             
-            # Get organization insights - FIXED: use created_at instead of updated_at
-            org_insights_response = self.supabase.table('organization_insights').select('*').eq('organization_id', organization_id).order('created_at', desc=True).limit(1).execute()
+            # Get organization insights - FIXED: use updated_at instead of created_at
+            org_insights_response = self.supabase.table('organization_insights').select('*').eq('organization_id', organization_id).order('updated_at', desc=True).limit(1).execute()
             org_insights = org_insights_response.data[0] if org_insights_response.data else None
             
             # CRITICAL FIX: Get ONLY departments from this organization
@@ -164,7 +164,7 @@ class DashboardServiceSupabase:
             # Get department insights for all departments in THIS organization only
             dept_insights_list = []
             for dept in departments:
-                insights_response = self.supabase.table('department_insights').select('*').eq('department_id', dept['id']).order('created_at', desc=True).limit(1).execute()
+                insights_response = self.supabase.table('department_insights').select('*').eq('department_id', dept['id']).order('updated_at', desc=True).limit(1).execute()
                 dept_insight = insights_response.data[0] if insights_response.data else None
                 
                 if dept_insight:
