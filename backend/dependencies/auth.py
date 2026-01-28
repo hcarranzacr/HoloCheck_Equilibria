@@ -1,148 +1,91 @@
-import hashlib
+"""
+Authentication dependencies for FastAPI
+"""
 import logging
-from datetime import datetime
-from typing import Optional
-
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from schemas.auth import UserResponse
+from fastapi import Depends, HTTPException, Header
 from core.supabase_client import get_supabase_client
+from schemas.auth import UserResponse
 
 logger = logging.getLogger(__name__)
 
-bearer_scheme = HTTPBearer(auto_error=False)
 
-
-async def get_bearer_token(
-    request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
-) -> str:
-    """Extract bearer token from Authorization header."""
-    if credentials and credentials.scheme.lower() == "bearer":
-        return credentials.credentials
-
-    logger.debug("Authentication required for request %s %s", request.method, request.url.path)
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication credentials were not provided")
-
-
-async def get_bearer_token_optional(
-    request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
-) -> Optional[str]:
-    """Extract bearer token from Authorization header (optional)."""
-    if credentials and credentials.scheme.lower() == "bearer":
-        return credentials.credentials
-    return None
-
-
-async def get_current_user(token: str = Depends(get_bearer_token)) -> UserResponse:
-    """Dependency to get current authenticated user via Supabase JWT token."""
-    try:
-        # Get Supabase client
-        supabase = get_supabase_client()
+async def get_current_user(authorization: str = Header(None)) -> UserResponse:
+    """
+    Dependency to get the current authenticated user from Supabase token.
+    
+    Args:
+        authorization: Bearer token from Authorization header
         
-        # Verify token with Supabase - use the token directly
+    Returns:
+        UserResponse: Authenticated user information
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    # Log the incoming request
+    logger.info("=" * 80)
+    logger.info("🔐 [AUTH] NEW AUTHENTICATION REQUEST")
+    logger.info(f"🔐 [AUTH] Authorization header received: {authorization[:50] if authorization else 'NONE'}...")
+    
+    if not authorization:
+        logger.error("❌ [AUTH] FAILED - No authorization header provided")
+        raise HTTPException(
+            status_code=401,
+            detail="No authorization header provided"
+        )
+    
+    if not authorization.startswith("Bearer "):
+        logger.error(f"❌ [AUTH] FAILED - Invalid format: {authorization[:20]}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization format. Expected 'Bearer <token>'"
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    logger.info(f"🔑 [AUTH] Token extracted, length: {len(token)}")
+    logger.info(f"🔑 [AUTH] Token preview: {token[:20]}...{token[-20:]}")
+    
+    try:
+        supabase = get_supabase_client()
+        logger.info("📡 [AUTH] Calling Supabase auth.get_user()...")
+        
+        # Get user from Supabase
         user_response = supabase.auth.get_user(token)
+        logger.info(f"📡 [AUTH] Supabase response received: {type(user_response)}")
         
         if not user_response or not user_response.user:
-            logger.warning("Token validation failed - no user returned")
+            logger.error("❌ [AUTH] FAILED - Invalid token, no user returned from Supabase")
+            logger.error(f"❌ [AUTH] Response: {user_response}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token"
+                status_code=401,
+                detail="Invalid authentication token - user not found"
             )
         
         user = user_response.user
-        user_id = user.id
-        email = user.email or ""
-        
-        # Get user metadata
-        user_metadata = user.user_metadata or {}
-        name = user_metadata.get("full_name") or user_metadata.get("name")
-        
-        # Get role from user_metadata or app_metadata
-        app_metadata = user.app_metadata or {}
-        role = user_metadata.get("role") or app_metadata.get("role", "user")
-        
-        # Parse last_login if available
-        last_login = None
-        last_login_raw = user_metadata.get("last_login")
-        if isinstance(last_login_raw, str):
-            try:
-                last_login = datetime.fromisoformat(last_login_raw)
-            except ValueError:
-                user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
-                logger.debug("Failed to parse last_login for user hash: %s", user_hash)
-        
-        logger.info(f"✅ User authenticated: {email} (role: {role})")
+        logger.info(f"✅ [AUTH] SUCCESS - Token validated")
+        logger.info(f"✅ [AUTH] User ID: {user.id}")
+        logger.info(f"✅ [AUTH] User Email: {user.email}")
+        logger.info(f"✅ [AUTH] User Metadata: {user.user_metadata}")
+        logger.info("=" * 80)
         
         return UserResponse(
-            id=user_id,
-            email=email,
-            name=name,
-            role=role,
-            last_login=last_login,
+            id=user.id,
+            email=user.email,
+            user_metadata=user.user_metadata or {},
+            app_metadata=user.app_metadata or {},
+            created_at=user.created_at
         )
         
     except HTTPException:
         raise
-    except Exception as exc:
-        logger.error(f"❌ Error verifying token with Supabase: {exc}", exc_info=True)
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error(f"❌ [AUTH] EXCEPTION - Token validation failed")
+        logger.error(f"❌ [AUTH] Exception type: {type(e).__name__}")
+        logger.error(f"❌ [AUTH] Exception message: {str(e)}")
+        logger.error(f"❌ [AUTH] Exception details: {repr(e)}")
+        logger.error("=" * 80)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token"
+            status_code=401,
+            detail=f"Token validation failed: {str(e)}"
         )
-
-
-async def get_current_user_optional(token: Optional[str] = Depends(get_bearer_token_optional)) -> Optional[UserResponse]:
-    """Dependency to get current authenticated user via Supabase JWT token (optional)."""
-    if not token:
-        return None
-    
-    try:
-        # Get Supabase client
-        supabase = get_supabase_client()
-        
-        # Verify token with Supabase
-        user_response = supabase.auth.get_user(token)
-        
-        if not user_response or not user_response.user:
-            return None
-        
-        user = user_response.user
-        user_id = user.id
-        email = user.email or ""
-        
-        # Get user metadata
-        user_metadata = user.user_metadata or {}
-        name = user_metadata.get("full_name") or user_metadata.get("name")
-        
-        # Get role from user_metadata or app_metadata
-        app_metadata = user.app_metadata or {}
-        role = user_metadata.get("role") or app_metadata.get("role", "user")
-        
-        # Parse last_login if available
-        last_login = None
-        last_login_raw = user_metadata.get("last_login")
-        if isinstance(last_login_raw, str):
-            try:
-                last_login = datetime.fromisoformat(last_login_raw)
-            except ValueError:
-                user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
-                logger.debug("Failed to parse last_login for user hash: %s", user_hash)
-        
-        return UserResponse(
-            id=user_id,
-            email=email,
-            name=name,
-            role=role,
-            last_login=last_login,
-        )
-        
-    except Exception as exc:
-        logger.warning(f"Token validation failed: {exc}")
-        return None
-
-
-async def get_admin_user(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:
-    """Dependency to ensure current user has admin role."""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    return current_user
