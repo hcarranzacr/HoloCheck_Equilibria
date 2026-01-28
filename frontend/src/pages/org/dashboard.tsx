@@ -1,55 +1,89 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { MetricCard, ConsumptionWidget, BiometricTable, TrendChart } from '@/components/dashboard';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useEffect, useState } from 'react';
+import { Users, TrendingUp, Activity, AlertCircle, DollarSign } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Building, Users, Activity, AlertCircle, Calendar, CheckCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
+import { createClient } from '@metagptx/web-sdk';
+import { useToast } from '@/hooks/use-toast';
 
-interface AdminDashboardData {
+const client = createClient();
+
+interface Subscription {
+  id: string;
+  organization_id: string;
+  plan_name: string;
+  scan_limit_per_user_per_month: number;
+  active: boolean;
+  used_scans_total: number;
+}
+
+interface ConsumptionMetrics {
+  scan_limit?: number;
+  scans_used?: number;
+  subscription_active?: boolean;
+  current_month_scans?: number;
+  usage_percentage?: number;
+}
+
+interface UsageSummary {
+  month: string;
+  total_scans: number;
+  total_prompts_used: number;
+  total_ai_tokens_used: number;
+}
+
+interface DashboardData {
   organization_id: string;
   total_users: number;
-  subscription: any;
-  consumption_metrics: {
-    scan_limit: number;
-    scans_used: number;
-    subscription_active: boolean;
-    current_month_scans: number;
-    current_month_prompts: number;
-    current_month_tokens: number;
-    limit_reached: boolean;
-    usage_percentage: number;
-  };
+  subscription: Subscription | null;
+  consumption_metrics: ConsumptionMetrics;
   recent_usage_logs: any[];
-  monthly_usage_summary: any[];
+  monthly_usage_summary: UsageSummary[];
   recent_scans_count: number;
   recent_scans: any[];
 }
 
 export default function AdminDashboard() {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<AdminDashboardData | null>(null);
 
   useEffect(() => {
-    fetchDashboardData();
+    loadDashboard();
   }, []);
 
-  const fetchDashboardData = async () => {
+  const loadDashboard = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient.dashboards.admin();
-      setData(response);
-      console.log('✅ Admin dashboard data loaded:', response);
+      console.log('📊 [Admin Dashboard] Loading data...');
+
+      const response = await client.apiCall.invoke({
+        url: '/api/v1/dashboards/admin',
+        method: 'GET',
+      });
+
+      console.log('✅ [Admin Dashboard] Data loaded:', response.data);
+      
+      // Ensure all arrays have default values
+      const dashboardData: DashboardData = {
+        ...response.data,
+        monthly_usage_summary: response.data.monthly_usage_summary || [],
+        recent_usage_logs: response.data.recent_usage_logs || [],
+        recent_scans: response.data.recent_scans || [],
+        consumption_metrics: response.data.consumption_metrics || {},
+      };
+      
+      setData(dashboardData);
     } catch (err: any) {
-      console.error('❌ Error loading admin dashboard:', err);
-      setError(err.response?.data?.detail || err.message || 'Error al cargar datos del dashboard');
-      toast.error('Error al cargar dashboard');
+      console.error('❌ [Admin Dashboard] Error loading data:', err);
+      const errorMsg = err?.data?.detail || err?.response?.data?.detail || err.message || 'Error al cargar el dashboard';
+      setError(errorMsg);
+      toast({
+        title: 'Error',
+        description: errorMsg,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -57,15 +91,11 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6 space-y-6">
-        <Skeleton className="h-12 w-64 mb-6" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando dashboard...</p>
         </div>
-        <Skeleton className="h-64" />
       </div>
     );
   }
@@ -77,9 +107,6 @@ export default function AdminDashboard() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button onClick={fetchDashboardData} className="mt-4">
-          Reintentar
-        </Button>
       </div>
     );
   }
@@ -88,204 +115,194 @@ export default function AdminDashboard() {
     return (
       <div className="container mx-auto p-6">
         <Alert>
-          <AlertDescription>No hay datos disponibles para la organización</AlertDescription>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>No se encontraron datos del dashboard</AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  const metrics = data.consumption_metrics || {};
-  const subscription = data.subscription || {};
+  const getUsagePercentageColor = (percentage?: number) => {
+    if (!percentage) return 'text-gray-500';
+    if (percentage < 50) return 'text-green-600';
+    if (percentage < 80) return 'text-yellow-600';
+    return 'text-red-600';
+  };
 
-  // Prepare usage trend data
-  const usageTrendData = data.monthly_usage_summary.map(usage => ({
-    date: usage.month,
-    value: usage.total_scans
-  }));
+  // Safely get monthly usage summary
+  const monthlyUsage = (data.monthly_usage_summary || []).slice(0, 6);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard Administrativo</h1>
-          <p className="text-muted-foreground">
-            Control operativo y gestión de recursos
-          </p>
-        </div>
-        <Button size="lg">
-          <Building className="mr-2 h-5 w-5" />
-          Configuración
-        </Button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Dashboard de Administración</h1>
       </div>
 
-      {/* Métricas operativas clave */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title="Usuarios Totales"
-          value={data.total_users}
-          icon={Users}
-          status="neutral"
-          description="Cuentas activas"
-        />
-        
-        <MetricCard
-          title="Escaneos (7 días)"
-          value={data.recent_scans_count}
-          icon={Activity}
-          status="neutral"
-          description="Última semana"
-        />
-        
-        <MetricCard
-          title="Uso del Límite"
-          value={metrics.usage_percentage?.toFixed(1) || 0}
-          unit="%"
-          icon={AlertCircle}
-          status={metrics.usage_percentage > 90 ? 'danger' : metrics.usage_percentage > 70 ? 'warning' : 'success'}
-          description="Consumo mensual"
-        />
-        
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Estado Suscripción</p>
-                <div className="mt-2">
-                  {metrics.subscription_active ? (
-                    <Badge className="bg-green-100 text-green-700">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Activa
-                    </Badge>
-                  ) : (
-                    <Badge variant="destructive">Inactiva</Badge>
-                  )}
-                </div>
-              </div>
-              <Calendar className="w-8 h-8 text-sky-600" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Usuarios Totales</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.total_users}</div>
+            <p className="text-xs text-muted-foreground">
+              En la organización
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Escaneos Recientes</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.recent_scans_count}</div>
+            <p className="text-xs text-muted-foreground">
+              Últimos 7 días
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Límite de Escaneos</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {data.consumption_metrics.scan_limit || 'N/A'}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Por usuario/mes
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Uso del Plan</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${getUsagePercentageColor(data.consumption_metrics.usage_percentage)}`}>
+              {data.consumption_metrics.usage_percentage 
+                ? `${data.consumption_metrics.usage_percentage.toFixed(1)}%` 
+                : 'N/A'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {data.consumption_metrics.scans_used || 0} / {data.consumption_metrics.scan_limit || 0}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Información de suscripción */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalles de Suscripción</CardTitle>
-          <CardDescription>Información del plan actual</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-slate-500">Límite por Usuario/Mes</p>
-              <p className="text-2xl font-bold">{subscription.scan_limit_per_user_per_month || 'N/A'}</p>
+      {/* Subscription Info */}
+      {data.subscription && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Información de Suscripción</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Plan</p>
+                <p className="text-lg font-semibold">{data.subscription.plan_name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Estado</p>
+                <p className="text-lg font-semibold">
+                  {data.subscription.active ? (
+                    <span className="text-green-600">Activo</span>
+                  ) : (
+                    <span className="text-red-600">Inactivo</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Escaneos Usados</p>
+                <p className="text-lg font-semibold">{data.subscription.used_scans_total}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Escaneos Usados Total</p>
-              <p className="text-2xl font-bold">{subscription.used_scans_total || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Fecha Inicio</p>
-              <p className="text-lg font-semibold">
-                {subscription.start_date ? new Date(subscription.start_date).toLocaleDateString('es-ES') : 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Fecha Fin</p>
-              <p className="text-lg font-semibold">
-                {subscription.end_date ? new Date(subscription.end_date).toLocaleDateString('es-ES') : 'N/A'}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Widgets de consumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ConsumptionWidget
-          title="Escaneos del Mes"
-          description="Consumo mensual de escaneos biométricos"
-          used={metrics.current_month_scans || 0}
-          limit={metrics.scan_limit || 1000}
-          type="scans"
-          showAlert={true}
-        />
-        
-        <ConsumptionWidget
-          title="Prompts del Mes"
-          description="Consultas AI realizadas este mes"
-          used={metrics.current_month_prompts || 0}
-          limit={metrics.current_month_prompts ? metrics.current_month_prompts * 1.5 : 500}
-          type="prompts"
-          showAlert={true}
-        />
-        
-        <ConsumptionWidget
-          title="Tokens AI del Mes"
-          description="Uso de recursos de inteligencia artificial"
-          used={metrics.current_month_tokens || 0}
-          limit={metrics.current_month_tokens ? metrics.current_month_tokens * 1.5 : 100000}
-          type="tokens"
-          showAlert={false}
-        />
-      </div>
-
-      {/* Tendencia de uso mensual */}
-      {usageTrendData.length > 1 && (
-        <TrendChart
-          title="Tendencia de Uso (últimos 12 meses)"
-          description="Evolución del consumo de escaneos por mes"
-          data={usageTrendData}
-          color="#0ea5e9"
-          height={300}
-        />
+          </CardContent>
+        </Card>
       )}
 
-      {/* Actividad reciente */}
-      {data.recent_scans && data.recent_scans.length > 0 && (
-        <BiometricTable
-          title="Actividad Reciente"
-          description="Últimos escaneos realizados en la organización"
-          measurements={data.recent_scans}
-          showUser={false}
-          maxRows={10}
-        />
+      {/* Monthly Usage Summary */}
+      {monthlyUsage.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Resumen de Uso Mensual</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2">Mes</th>
+                    <th className="text-right p-2">Escaneos</th>
+                    <th className="text-right p-2">Prompts</th>
+                    <th className="text-right p-2">Tokens AI</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyUsage.map((usage, index) => (
+                    <tr key={index} className="border-b hover:bg-muted/50">
+                      <td className="p-2">{usage.month}</td>
+                      <td className="text-right p-2">{usage.total_scans}</td>
+                      <td className="text-right p-2">{usage.total_prompts_used || 0}</td>
+                      <td className="text-right p-2">{usage.total_ai_tokens_used || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Logs de uso recientes */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Registro de Uso Reciente</CardTitle>
-          <CardDescription>Últimas actividades registradas en el sistema</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {data.recent_usage_logs.slice(0, 10).map((log, index) => (
-              <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Activity className="w-4 h-4 text-slate-400" />
+      {/* Recent Usage Logs */}
+      {data.recent_usage_logs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Actividad Reciente</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.recent_usage_logs.slice(0, 10).map((log, index) => (
+                <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
-                    <p className="text-sm font-medium">{log.scan_type || 'Escaneo'}</p>
-                    <p className="text-xs text-slate-500">
-                      Usuario: {log.user_id?.substring(0, 8)}...
+                    <p className="font-medium">{log.action_type || 'Actividad'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {log.used_at ? new Date(log.used_at).toLocaleString('es-ES') : 'Fecha desconocida'}
                     </p>
                   </div>
+                  <div className="text-right">
+                    {log.scans_used && (
+                      <p className="text-sm">
+                        <span className="font-semibold">{log.scans_used}</span> escaneos
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-500">
-                    {new Date(log.used_at).toLocaleString('es-ES')}
-                  </p>
-                  {log.scan_success !== undefined && (
-                    <Badge variant={log.scan_success ? 'default' : 'destructive'} className="text-xs">
-                      {log.scan_success ? 'Exitoso' : 'Fallido'}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {data.recent_usage_logs.length === 0 && monthlyUsage.length === 0 && (
+        <Card>
+          <CardContent className="py-8">
+            <p className="text-center text-muted-foreground">
+              No hay datos de uso disponibles
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
