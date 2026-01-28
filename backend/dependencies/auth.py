@@ -97,3 +97,32 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Authentication failed: {str(e)}"
         )
+
+
+async def get_current_user_optional(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[UserResponse]:
+    """
+    Optional authentication - returns None if no valid token instead of raising error
+    Used for endpoints that work with or without authentication
+    """
+    if not authorization:
+        return None
+    
+    try:
+        return await get_current_user(authorization, db)
+    except HTTPException:
+        return None
+    except Exception as e:
+        logger.warning(f"⚠️ Optional auth failed: {e}")
+        return None
+
+
+async def get_current_active_user(
+    current_user: UserResponse = Depends(get_current_user),
+) -> UserResponse:
+    """
+    Ensure the current user is active (can be extended with more checks)
+    """
+    return current_user
