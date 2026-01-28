@@ -21,6 +21,7 @@ from routers import (
     auth,
     health,
     user_profile,
+    user_profiles,
     dashboards,
     biometric_indicators,
     biometric_measurements,
@@ -94,6 +95,7 @@ async def health_check():
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(user_profile.router)
+app.include_router(user_profiles.router)
 app.include_router(dashboards.router)
 app.include_router(biometric_indicators.router)
 app.include_router(biometric_measurements.router)
