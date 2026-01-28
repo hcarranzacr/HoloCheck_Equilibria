@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from schemas.auth import UserResponse
-from core.supabase_client import get_supabase_client
+from core.supabase_client import get_supabase_client_with_token
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ async def get_bearer_token_optional(
 async def get_current_user(token: str = Depends(get_bearer_token)) -> UserResponse:
     """Dependency to get current authenticated user via Supabase JWT token."""
     try:
-        # Get Supabase client
-        supabase = get_supabase_client()
+        # Get Supabase client with user's token
+        supabase = get_supabase_client_with_token(token)
         
         # Verify token with Supabase
         user_response = supabase.auth.get_user(token)
@@ -94,8 +94,8 @@ async def get_current_user_optional(token: Optional[str] = Depends(get_bearer_to
         return None
     
     try:
-        # Get Supabase client
-        supabase = get_supabase_client()
+        # Get Supabase client with user's token
+        supabase = get_supabase_client_with_token(token)
         
         # Verify token with Supabase
         user_response = supabase.auth.get_user(token)
