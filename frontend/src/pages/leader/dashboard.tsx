@@ -61,22 +61,71 @@ export default function LeaderDashboard() {
   }, []);
 
   const loadDashboard = async () => {
+    const timestamp = new Date().toISOString();
+    console.log(`🎯 [LEADER DASHBOARD] START - Loading data at ${timestamp}`);
+    
     try {
       setLoading(true);
       setError(null);
-      console.log('📊 [Leader Dashboard] Loading data...');
+      
+      const url = '/api/v1/dashboards/leader';
+      console.log(`📡 [LEADER DASHBOARD] API Call - URL: ${url}, Method: GET`);
+      console.log(`🔑 [LEADER DASHBOARD] Checking authentication token...`);
+      
+      // Log token presence (not the actual token for security)
+      const token = localStorage.getItem('supabase.auth.token');
+      console.log(`🔐 [LEADER DASHBOARD] Token exists: ${!!token}, Length: ${token?.length || 0}`);
 
+      console.log(`⏳ [LEADER DASHBOARD] Sending request...`);
       const response = await client.apiCall.invoke({
-        url: '/api/v1/dashboards/leader',
+        url: url,
         method: 'GET',
       });
 
-      console.log('✅ [Leader Dashboard] Data loaded:', response.data);
+      console.log(`✅ [LEADER DASHBOARD] Response received - Status: 200`);
+      console.log(`📊 [LEADER DASHBOARD] Response data keys:`, Object.keys(response.data || {}));
+      console.log(`📋 [LEADER DASHBOARD] Full response data:`, response.data);
+      
+      console.log(`🔧 [LEADER DASHBOARD] Processing data...`);
+      console.log(`👥 [LEADER DASHBOARD] Team size: ${response.data?.team_size || 0}`);
+      console.log(`📈 [LEADER DASHBOARD] Total scans: ${response.data?.total_scans || 0}`);
+      console.log(`📊 [LEADER DASHBOARD] Team metrics:`, response.data?.team_metrics);
+
       setData(response.data);
+      console.log(`✅ [LEADER DASHBOARD] SUCCESS - Data loaded and state updated`);
+      
     } catch (err: any) {
-      console.error('❌ Error loading leader dashboard:', err);
+      console.error(`❌ [LEADER DASHBOARD] ERROR CAUGHT`);
+      console.error(`📛 [LEADER DASHBOARD] Error type: ${err?.constructor?.name || 'Unknown'}`);
+      console.error(`📛 [LEADER DASHBOARD] Error message: ${err?.message || 'No message'}`);
+      
+      // Log response details if available
+      if (err?.response) {
+        console.error(`📛 [LEADER DASHBOARD] Response status: ${err.response.status}`);
+        console.error(`📛 [LEADER DASHBOARD] Response data:`, err.response.data);
+        console.error(`📛 [LEADER DASHBOARD] Response headers:`, err.response.headers);
+      }
+      
+      // Log request details if available
+      if (err?.config) {
+        console.error(`📛 [LEADER DASHBOARD] Request URL: ${err.config.url}`);
+        console.error(`📛 [LEADER DASHBOARD] Request method: ${err.config.method}`);
+        console.error(`📛 [LEADER DASHBOARD] Request headers:`, err.config.headers);
+      }
+      
+      // Log SDK-specific error details
+      if (err?.data) {
+        console.error(`📛 [LEADER DASHBOARD] SDK error data:`, err.data);
+      }
+      
+      // Full error object
+      console.error(`📛 [LEADER DASHBOARD] Complete error object:`, err);
+      
       const errorMsg =
         err?.data?.detail || err?.response?.data?.detail || err.message || 'Error al cargar el dashboard';
+      
+      console.error(`📛 [LEADER DASHBOARD] Final error message: ${errorMsg}`);
+      
       setError(errorMsg);
       toast({
         title: 'Error',
@@ -85,6 +134,7 @@ export default function LeaderDashboard() {
       });
     } finally {
       setLoading(false);
+      console.log(`🏁 [LEADER DASHBOARD] Loading finished`);
     }
   };
 

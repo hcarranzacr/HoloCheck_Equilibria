@@ -32,18 +32,70 @@ export default function HRDashboard() {
   }, []);
 
   const fetchDashboardData = async () => {
+    const timestamp = new Date().toISOString();
+    console.log(`🎯 [HR DASHBOARD] START - Loading data at ${timestamp}`);
+    
     try {
       setLoading(true);
       setError(null);
+      
+      console.log(`📡 [HR DASHBOARD] API Call - Using apiClient.dashboards.hr()`);
+      console.log(`🔑 [HR DASHBOARD] Checking authentication token...`);
+      
+      // Log token presence (not the actual token for security)
+      const token = localStorage.getItem('supabase.auth.token');
+      console.log(`🔐 [HR DASHBOARD] Token exists: ${!!token}, Length: ${token?.length || 0}`);
+      
+      console.log(`⏳ [HR DASHBOARD] Sending request...`);
       const response = await apiClient.dashboards.hr();
+      
+      console.log(`✅ [HR DASHBOARD] Response received`);
+      console.log(`📊 [HR DASHBOARD] Response data keys:`, Object.keys(response || {}));
+      console.log(`📋 [HR DASHBOARD] Full response data:`, response);
+      
+      console.log(`🔧 [HR DASHBOARD] Processing data...`);
+      console.log(`👥 [HR DASHBOARD] Total employees: ${response?.total_employees || 0}`);
+      console.log(`🏛️ [HR DASHBOARD] Departments count: ${response?.departments_count || 0}`);
+      console.log(`📊 [HR DASHBOARD] Organization insights:`, response?.organization_insights);
+      
       setData(response);
-      console.log('✅ HR dashboard data loaded:', response);
+      console.log(`✅ [HR DASHBOARD] SUCCESS - Data loaded and state updated`);
+      
     } catch (err: any) {
-      console.error('❌ Error loading HR dashboard:', err);
-      setError(err.response?.data?.detail || err.message || 'Error al cargar datos del dashboard');
+      console.error(`❌ [HR DASHBOARD] ERROR CAUGHT`);
+      console.error(`📛 [HR DASHBOARD] Error type: ${err?.constructor?.name || 'Unknown'}`);
+      console.error(`📛 [HR DASHBOARD] Error message: ${err?.message || 'No message'}`);
+      
+      // Log response details if available
+      if (err?.response) {
+        console.error(`📛 [HR DASHBOARD] Response status: ${err.response.status}`);
+        console.error(`📛 [HR DASHBOARD] Response data:`, err.response.data);
+        console.error(`📛 [HR DASHBOARD] Response headers:`, err.response.headers);
+      }
+      
+      // Log request details if available
+      if (err?.config) {
+        console.error(`📛 [HR DASHBOARD] Request URL: ${err.config.url}`);
+        console.error(`📛 [HR DASHBOARD] Request method: ${err.config.method}`);
+        console.error(`📛 [HR DASHBOARD] Request headers:`, err.config.headers);
+      }
+      
+      // Log SDK-specific error details
+      if (err?.data) {
+        console.error(`📛 [HR DASHBOARD] SDK error data:`, err.data);
+      }
+      
+      // Full error object
+      console.error(`📛 [HR DASHBOARD] Complete error object:`, err);
+      
+      const errorMsg = err.response?.data?.detail || err.message || 'Error al cargar datos del dashboard';
+      console.error(`📛 [HR DASHBOARD] Final error message: ${errorMsg}`);
+      
+      setError(errorMsg);
       toast.error('Error al cargar dashboard');
     } finally {
       setLoading(false);
+      console.log(`🏁 [HR DASHBOARD] Loading finished`);
     }
   };
 
