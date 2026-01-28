@@ -1,94 +1,123 @@
 """
 User Profile API Router
-Provides endpoints for user profile management
+Handles user profile operations for the authenticated user
 """
-import logging
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from dependencies.auth import get_current_user
-from schemas.auth import UserResponse
-from core.supabase_client import get_supabase_client
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+import logging
 
-router = APIRouter(prefix="/api/v1", tags=["user-profile"])
+from core.database import get_db
+from dependencies.auth import get_current_user
+from models.user_profiles import UserProfile
+from schemas.auth import UserResponse
+
+router = APIRouter(prefix="/api/v1/user-profile", tags=["user-profile"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/user-profile")
-async def get_user_profile(current_user: UserResponse = Depends(get_current_user)):
-    """Get current user's profile information"""
+@router.get("")
+async def get_user_profile(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the profile of the currently authenticated user
+    """
     try:
-        supabase = get_supabase_client()
+        logger.info(f"🔍 PROFILE DEBUG - Fetching profile for user_id: {current_user.id}")
+        logger.info(f"🔍 PROFILE DEBUG - User email: {current_user.email}")
         
-        # Get user profile by user_id
-        result = supabase.table('user_profiles').select('*').eq('user_id', current_user.id).execute()
+        # Query user profile by user_id (string comparison)
+        query = select(UserProfile).where(UserProfile.user_id == str(current_user.id))
+        result = await db.execute(query)
+        profile = result.scalar_one_or_none()
         
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
+        if not profile:
+            logger.error(f"❌ PROFILE ERROR - No profile found for user_id: {current_user.id}")
+            
+            # Check if ANY profiles exist in the table
+            count_query = select(UserProfile)
+            count_result = await db.execute(count_query)
+            all_profiles = count_result.scalars().all()
+            
+            logger.error(f"❌ PROFILE ERROR - Total profiles in DB: {len(all_profiles)}")
+            if all_profiles:
+                logger.error(f"❌ PROFILE ERROR - Sample user_ids in DB: {[p.user_id for p in all_profiles[:5]]}")
+            
+            raise HTTPException(
+                status_code=404,
+                detail=f"User profile not found for user_id: {current_user.id}"
+            )
         
-        return result.data[0]
+        logger.info(f"✅ PROFILE DEBUG - Found profile: id={profile.id}, full_name={profile.full_name}")
+        
+        return {
+            "id": str(profile.id),
+            "user_id": profile.user_id,
+            "organization_id": str(profile.organization_id) if profile.organization_id else None,
+            "department_id": str(profile.department_id) if profile.department_id else None,
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "role": profile.role,
+            "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching user profile: {e}")
-        raise HTTPException(status_code=500, detail=f"Error loading profile: {str(e)}")
+        logger.error(f"❌ PROFILE ERROR - Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch user profile: {str(e)}"
+        )
 
 
-@router.get("/organizations/{organization_id}")
-async def get_organization(organization_id: str, current_user: UserResponse = Depends(get_current_user)):
-    """Get organization information"""
+@router.put("")
+async def update_user_profile(
+    profile_data: dict,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update the profile of the currently authenticated user
+    """
     try:
-        supabase = get_supabase_client()
+        query = select(UserProfile).where(UserProfile.user_id == str(current_user.id))
+        result = await db.execute(query)
+        profile = result.scalar_one_or_none()
         
-        result = supabase.table('organizations').select('*').eq('id', organization_id).execute()
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail="User profile not found"
+            )
         
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Organization not found")
+        # Update allowed fields
+        if "full_name" in profile_data:
+            profile.full_name = profile_data["full_name"]
+        if "email" in profile_data:
+            profile.email = profile_data["email"]
         
-        return result.data[0]
+        await db.commit()
+        await db.refresh(profile)
+        
+        return {
+            "id": str(profile.id),
+            "user_id": profile.user_id,
+            "organization_id": str(profile.organization_id) if profile.organization_id else None,
+            "department_id": str(profile.department_id) if profile.department_id else None,
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "role": profile.role,
+            "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching organization: {e}")
-        raise HTTPException(status_code=500, detail=f"Error loading organization: {str(e)}")
-
-
-@router.get("/departments/{department_id}")
-async def get_department(department_id: str, current_user: UserResponse = Depends(get_current_user)):
-    """Get department information"""
-    try:
-        supabase = get_supabase_client()
-        
-        result = supabase.table('departments').select('*').eq('id', department_id).execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Department not found")
-        
-        return result.data[0]
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching department: {e}")
-        raise HTTPException(status_code=500, detail=f"Error loading department: {str(e)}")
-
-
-@router.get("/users/{user_id}")
-async def get_user(user_id: str, current_user: UserResponse = Depends(get_current_user)):
-    """Get user information (for leader lookup)"""
-    try:
-        supabase = get_supabase_client()
-        
-        result = supabase.table('user_profiles').select('full_name, email').eq('user_id', user_id).execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        return result.data[0]
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching user: {e}")
-        raise HTTPException(status_code=500, detail=f"Error loading user: {str(e)}")
+        logger.error(f"Error updating user profile: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update user profile: {str(e)}"
+        )

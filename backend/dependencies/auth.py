@@ -1,93 +1,98 @@
 """
-Authentication dependencies for FastAPI
-Direct JWT validation without Supabase SDK
+Authentication dependencies for FastAPI routes
 """
 import logging
-import jwt
-from fastapi import Depends, HTTPException, Header
+from typing import Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.config import settings
+from core.database import get_db
 from schemas.auth import UserResponse
 
 logger = logging.getLogger(__name__)
+security = HTTPBearer()
 
 
-async def get_current_user(authorization: str = Header(None)) -> UserResponse:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
     """
-    Dependency to get the current authenticated user from JWT token.
-    Validates token directly without calling Supabase API.
-    
-    Args:
-        authorization: Bearer token from Authorization header
-        
-    Returns:
-        UserResponse: Authenticated user information
-        
-    Raises:
-        HTTPException: If authentication fails
+    Validate JWT token and return current user information
     """
-    logger.info("🔐 [AUTH] NEW AUTHENTICATION REQUEST")
-    
-    if not authorization:
-        logger.error("❌ [AUTH] FAILED - No authorization header provided")
-        raise HTTPException(
-            status_code=401,
-            detail="No authorization header provided"
-        )
-    
-    if not authorization.startswith("Bearer "):
-        logger.error(f"❌ [AUTH] FAILED - Invalid format")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization format. Expected 'Bearer <token>'"
-        )
-    
-    token = authorization.replace("Bearer ", "")
-    logger.info(f"🔑 [AUTH] Token extracted, length: {len(token)}")
+    token = credentials.credentials
     
     try:
-        # Decode JWT token without verification (we trust Supabase frontend)
-        # The token was already validated by Supabase on the frontend
+        # Decode JWT token
         payload = jwt.decode(
             token,
-            options={"verify_signature": False},  # Don't verify signature
-            algorithms=["HS256"]
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
         )
         
-        user_id = payload.get("sub")
-        email = payload.get("email")
+        user_id: str = payload.get("sub")
+        email: str = payload.get("email", "")
+        name: str = payload.get("name", "")
+        role: str = payload.get("role", "user")
         
-        if not user_id or not email:
-            logger.error("❌ [AUTH] FAILED - Invalid token payload")
+        # CRITICAL LOGGING - See what user_id we're getting from token
+        logger.info(f"🔍 AUTH DEBUG - Token decoded successfully")
+        logger.info(f"🔍 AUTH DEBUG - user_id from token: {user_id}")
+        logger.info(f"🔍 AUTH DEBUG - email from token: {email}")
+        logger.info(f"🔍 AUTH DEBUG - role from token: {role}")
+        logger.info(f"🔍 AUTH DEBUG - Full payload: {payload}")
+        
+        if user_id is None:
+            logger.error("❌ AUTH ERROR - No 'sub' field in token payload")
             raise HTTPException(
-                status_code=401,
-                detail="Invalid token payload"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token - missing user ID"
             )
         
-        logger.info(f"✅ [AUTH] SUCCESS - User ID: {user_id}, Email: {email}")
+        # Check if user_profile exists in database
+        from models.user_profiles import UserProfile
+        from sqlalchemy import select
+        
+        query = select(UserProfile).where(UserProfile.user_id == str(user_id))
+        result = await db.execute(query)
+        user_profile = result.scalar_one_or_none()
+        
+        if user_profile:
+            logger.info(f"✅ AUTH DEBUG - Found user_profile in DB: id={user_profile.id}, organization_id={user_profile.organization_id}")
+        else:
+            logger.warning(f"⚠️ AUTH DEBUG - No user_profile found in DB for user_id={user_id}")
+            logger.warning(f"⚠️ AUTH DEBUG - User can authenticate but has no profile record")
         
         return UserResponse(
-            id=user_id,
+            id=str(user_id),
             email=email,
-            user_metadata=payload.get("user_metadata", {}),
-            app_metadata=payload.get("app_metadata", {}),
-            created_at=payload.get("created_at", "")
+            name=name,
+            role=role,
+            organization_id=str(user_profile.organization_id) if user_profile and user_profile.organization_id else None
         )
         
-    except jwt.ExpiredSignatureError:
-        logger.error("❌ [AUTH] FAILED - Token expired")
+    except JWTError as e:
+        logger.error(f"❌ JWT decode error: {e}")
         raise HTTPException(
-            status_code=401,
-            detail="Token expired"
-        )
-    except jwt.InvalidTokenError as e:
-        logger.error(f"❌ [AUTH] FAILED - Invalid token: {str(e)}")
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid token: {str(e)}"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
         )
     except Exception as e:
-        logger.error(f"❌ [AUTH] EXCEPTION - {str(e)}")
+        logger.error(f"❌ Unexpected auth error: {e}")
         raise HTTPException(
-            status_code=401,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Authentication failed: {str(e)}"
         )
+
+
+async def get_current_active_user(
+    current_user: UserResponse = Depends(get_current_user),
+) -> UserResponse:
+    """
+    Ensure the current user is active (can be extended with more checks)
+    """
+    return current_user
