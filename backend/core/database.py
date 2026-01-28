@@ -1,5 +1,6 @@
 """
 Database configuration and connection management
+Direct PostgreSQL connection (no Supabase SDK)
 """
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -11,10 +12,10 @@ logger = logging.getLogger(__name__)
 # Create async engine
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,
+    echo=False,  # Changed from settings.debug to False to avoid noise
     pool_pre_ping=True,
     pool_size=10,
-    max_overflow=20,
+    max_overflow=20
 )
 
 # Create async session factory
@@ -23,64 +24,69 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False,
+    autoflush=False
 )
 
 # Base class for models
 Base = declarative_base()
 
 
+async def get_db() -> AsyncSession:
+    """
+    Dependency for getting database session
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
 class DatabaseManager:
-    """Database manager for handling connections"""
+    """Manager for database operations"""
     
     def __init__(self):
         self.engine = engine
         self.session_factory = AsyncSessionLocal
     
     async def init_db(self):
-        """Initialize database - create tables if they don't exist"""
+        """Initialize database tables"""
         try:
+            logger.info("🔄 Initializing database tables...")
             async with self.engine.begin() as conn:
-                # Import all models here to ensure they're registered
-                from models import (
-                    user, organization, department, biometric_measurement,
-                    biometric_indicator, ai_analysis_result, ai_analysis_log,
-                    system_audit_log, app_setting, organization_subscription,
-                    subscription_usage_log, organization_usage_summary,
-                    param_subscription_plan, param_industry, param_sector,
-                    benefit_category, benefit_type, benefit, benefit_eligibility_rule,
-                    benefit_assignment, benefit_claim
-                )
+                # Import all models to register them
+                try:
+                    from models import (
+                        organizations, users, user_profiles, departments,
+                        biometric_data, biometric_indicator_ranges,
+                        ai_analysis_results, recommendations
+                    )
+                except ImportError as e:
+                    logger.warning(f"⚠️ Some models not found (this is OK for initial setup): {e}")
                 
                 # Create all tables
                 await conn.run_sync(Base.metadata.create_all)
-                logger.info("✅ Database tables created/verified successfully")
+                logger.info("✅ Database tables initialized successfully")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {str(e)}")
-            raise
+            logger.error(f"❌ Failed to initialize database: {e}")
+            # Don't raise - allow app to start even if DB init fails
+            logger.warning("⚠️ Continuing without database initialization")
     
-    async def get_session(self) -> AsyncSession:
-        """Get a database session"""
-        async with self.session_factory() as session:
-            try:
-                yield session
-            finally:
-                await session.close()
-    
-    async def close(self):
-        """Close database connections"""
-        await self.engine.dispose()
-        logger.info("Database connections closed")
+    async def health_check(self) -> bool:
+        """Check if database connection is healthy"""
+        try:
+            async with self.engine.connect() as conn:
+                await conn.execute("SELECT 1")
+                logger.info("✅ Database health check passed")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Database health check failed: {e}")
+            return False
 
 
 # Global database manager instance
 db_manager = DatabaseManager()
-
-
-async def get_db():
-    """Dependency for getting database sessions"""
-    async with db_manager.session_factory() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
