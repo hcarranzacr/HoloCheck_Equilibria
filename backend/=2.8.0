@@ -1,0 +1,3 @@
+pip is deprecated in this environment, using 'uv pip' as replacement
+Using CPython 3.10.18 interpreter at: /opt/python/envs/mgx-chat/bin/python3
+Audited 1 package in 97ms
