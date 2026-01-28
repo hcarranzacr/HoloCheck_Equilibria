@@ -3,7 +3,7 @@ import { Activity, TrendingUp, Heart, Brain, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { loadEmployeeDashboardData } from '@/lib/dashboard-utils';
 import { toast } from 'sonner';
 
 interface BiometricData {
@@ -33,122 +33,33 @@ export default function EmployeeDashboard() {
   }, []);
 
   const loadDashboard = async () => {
-    const timestamp = new Date().toISOString();
-    console.log(`📊 [Employee Dashboard] START - Loading data at ${timestamp}`);
-    
     try {
       setLoading(true);
       setError(null);
 
-      // Step 1: Check authentication
-      console.log('🔑 [Employee Dashboard] Checking authentication...');
-      const session = await apiClient.auth.getSession();
-      console.log(`🔐 [Employee Dashboard] Session exists: ${!!session}, Token length: ${session?.access_token?.length || 0}`);
-      
-      if (!session?.access_token) {
-        throw new Error('No estás autenticado. Por favor, inicia sesión nuevamente.');
+      // Use standardized loading function
+      const result = await loadEmployeeDashboardData();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Error al cargar el dashboard');
       }
 
-      // Step 2: Get biometric indicator ranges
-      console.log('📊 [Employee Dashboard] Step 1: Fetching biometric indicator ranges');
-      const indicatorRanges = await apiClient.getBiometricIndicatorRanges();
-      console.log(`✅ [Employee Dashboard] Ranges loaded: ${Object.keys(indicatorRanges).length} indicators`);
-      setRanges(indicatorRanges);
+      const { latestMeasurement, measurementHistory, recommendations, ranges: indicatorRanges } = result.data;
 
-      // Step 3: Get current user
-      console.log('👤 [Employee Dashboard] Step 2: Fetching current user');
-      const user = await apiClient.auth.getUser();
-      if (!user) {
-        throw new Error('Usuario no encontrado');
-      }
-      console.log(`✅ [Employee Dashboard] User found: ${user.email}`);
-
-      // Step 4: Get user profile
-      console.log('📋 [Employee Dashboard] Step 3: Fetching user profile');
-      console.log(`📡 [Employee Dashboard] Calling apiClient.userProfiles.query with user_id: ${user.id}`);
-      
-      let userProfile;
-      try {
-        const profileResponse = await apiClient.userProfiles.query({
-          query: { user_id: user.id },
-          limit: 1
+      // Convert ranges to the format expected by the component
+      const rangesMap: Record<string, Record<string, [number, number]>> = {};
+      if (indicatorRanges && Array.isArray(indicatorRanges)) {
+        indicatorRanges.forEach((range: any) => {
+          if (range.indicator_code) {
+            rangesMap[range.indicator_code] = {
+              low: [parseFloat(range.min_value), parseFloat(range.max_value)],
+              medium: [parseFloat(range.min_value), parseFloat(range.max_value)],
+              high: [parseFloat(range.min_value), parseFloat(range.max_value)]
+            };
+          }
         });
-        console.log(`✅ [Employee Dashboard] Profile query response:`, profileResponse);
-        userProfile = profileResponse.items?.[0];
-        
-        if (!userProfile) {
-          console.warn('⚠️ [Employee Dashboard] No profile found, user may need to complete onboarding');
-        } else {
-          console.log(`✅ [Employee Dashboard] Profile loaded: ${userProfile.full_name}`);
-        }
-      } catch (profileError: any) {
-        console.error(`❌ [Employee Dashboard] STEP 3 FAILED - Profile query error`);
-        console.error(`📛 [Employee Dashboard] Error type: ${profileError?.constructor?.name}`);
-        console.error(`📛 [Employee Dashboard] Error message: ${profileError?.message}`);
-        console.error(`📛 [Employee Dashboard] Error status: ${profileError?.response?.status}`);
-        console.error(`📛 [Employee Dashboard] Error data:`, profileError?.response?.data);
-        console.error(`📛 [Employee Dashboard] Full error:`, profileError);
-        throw new Error(`Error al cargar perfil: ${profileError?.response?.data?.detail || profileError?.message || 'Error desconocido'}`);
       }
-
-      // Step 5: Get latest biometric measurement
-      console.log('📊 [Employee Dashboard] Step 4: Fetching latest biometric measurement');
-      console.log(`📡 [Employee Dashboard] Calling apiClient.getLatestMeasurement with user_id: ${user.id}`);
-      
-      let latestMeasurement;
-      try {
-        latestMeasurement = await apiClient.getLatestMeasurement(user.id);
-        console.log(`✅ [Employee Dashboard] Latest measurement:`, latestMeasurement);
-        
-        if (!latestMeasurement) {
-          console.warn('⚠️ [Employee Dashboard] No measurements found for user');
-        }
-      } catch (measurementError: any) {
-        console.error(`❌ [Employee Dashboard] STEP 4 FAILED - Latest measurement error`);
-        console.error(`📛 [Employee Dashboard] Error type: ${measurementError?.constructor?.name}`);
-        console.error(`📛 [Employee Dashboard] Error message: ${measurementError?.message}`);
-        console.error(`📛 [Employee Dashboard] Error status: ${measurementError?.response?.status}`);
-        console.error(`📛 [Employee Dashboard] Error data:`, measurementError?.response?.data);
-        console.error(`📛 [Employee Dashboard] Full error:`, measurementError);
-        throw new Error(`Error al cargar mediciones: ${measurementError?.response?.data?.detail || measurementError?.message || 'Error desconocido'}`);
-      }
-
-      // Step 6: Get measurement history
-      console.log('📊 [Employee Dashboard] Step 5: Fetching measurement history');
-      console.log(`📡 [Employee Dashboard] Calling apiClient.getMeasurementHistory with user_id: ${user.id}`);
-      
-      let measurementHistory;
-      try {
-        measurementHistory = await apiClient.getMeasurementHistory(user.id, 30);
-        console.log(`✅ [Employee Dashboard] Measurement history: ${measurementHistory?.length || 0} records`);
-      } catch (historyError: any) {
-        console.error(`❌ [Employee Dashboard] STEP 5 FAILED - Measurement history error`);
-        console.error(`📛 [Employee Dashboard] Error type: ${historyError?.constructor?.name}`);
-        console.error(`📛 [Employee Dashboard] Error message: ${historyError?.message}`);
-        console.error(`📛 [Employee Dashboard] Error status: ${historyError?.response?.status}`);
-        console.error(`📛 [Employee Dashboard] Error data:`, historyError?.response?.data);
-        console.error(`📛 [Employee Dashboard] Full error:`, historyError);
-        throw new Error(`Error al cargar historial: ${historyError?.response?.data?.detail || historyError?.message || 'Error desconocido'}`);
-      }
-
-      // Step 7: Get recommendations
-      console.log('📊 [Employee Dashboard] Step 6: Fetching recommendations');
-      console.log(`📡 [Employee Dashboard] Calling apiClient.getUserRecommendations with user_id: ${user.id}`);
-      
-      let recommendations = [];
-      try {
-        recommendations = await apiClient.getUserRecommendations(user.id);
-        console.log(`✅ [Employee Dashboard] Recommendations: ${recommendations?.length || 0} items`);
-      } catch (recError: any) {
-        console.error(`❌ [Employee Dashboard] STEP 6 FAILED - Recommendations error`);
-        console.error(`📛 [Employee Dashboard] Error type: ${recError?.constructor?.name}`);
-        console.error(`📛 [Employee Dashboard] Error message: ${recError?.message}`);
-        console.error(`📛 [Employee Dashboard] Error status: ${recError?.response?.status}`);
-        console.error(`📛 [Employee Dashboard] Error data:`, recError?.response?.data);
-        console.error(`📛 [Employee Dashboard] Full error:`, recError);
-        // Don't throw for recommendations - they're optional
-        console.warn('⚠️ [Employee Dashboard] Continuing without recommendations');
-      }
+      setRanges(rangesMap);
 
       // Process biometric data
       const biometricData: BiometricData[] = [];
@@ -166,7 +77,7 @@ export default function EmployeeDashboard() {
             biometricData.push({
               indicator: label,
               value: value,
-              status: getStatus(key, value, indicatorRanges),
+              status: getStatus(key, value, rangesMap),
               trend: 'stable'
             });
           }
@@ -176,7 +87,7 @@ export default function EmployeeDashboard() {
       setData({
         latestScan: latestMeasurement,
         biometricData,
-        recommendations
+        recommendations: recommendations || []
       });
 
       console.log('✅ [Employee Dashboard] SUCCESS - All data loaded');
@@ -288,10 +199,10 @@ export default function EmployeeDashboard() {
             <div className="space-y-4">
               {data.recommendations.slice(0, 5).map((rec, index) => (
                 <div key={index} className="border-b pb-3 last:border-0">
-                  <h3 className="font-semibold">{rec.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                  <h3 className="font-semibold">{rec.title || rec.recommendation_text}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{rec.description || rec.recommendation_text}</p>
                   <Badge variant="outline" className="mt-2">
-                    {rec.recommendation_type}
+                    {rec.recommendation_type || rec.category || 'General'}
                   </Badge>
                 </div>
               ))}
