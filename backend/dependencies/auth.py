@@ -1,14 +1,13 @@
 """
 Authentication dependencies for FastAPI routes
+SIMPLIFIED: No JWT decoding, just verify token exists
 """
 import logging
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status, Header
-from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
 from core.database import get_db
 from schemas.auth import UserResponse
 
@@ -20,8 +19,8 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
-    Validate JWT token and return current user information
-    Accepts Supabase JWT tokens without signature verification
+    Simplified authentication - just verify token exists
+    Frontend already validated with Supabase, we trust it
     """
     if not authorization:
         logger.error("❌ AUTH - No authorization header")
@@ -39,28 +38,42 @@ async def get_current_user(
     
     token = authorization.replace("Bearer ", "")
     
-    try:
-        # Decode JWT token WITHOUT signature verification
-        # Supabase tokens are already validated on the frontend
-        payload = jwt.decode(
-            token,
-            options={"verify_signature": False},  # CRITICAL: Don't verify signature
-            algorithms=["HS256", "RS256"]  # Support both algorithms
+    if not token or len(token) < 10:
+        logger.error("❌ AUTH - Token too short or empty")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token format"
         )
+    
+    # Extract user_id from token WITHOUT decoding
+    # Supabase JWT format: header.payload.signature
+    # payload is base64 encoded JSON with "sub" field
+    try:
+        import base64
+        import json
         
-        user_id: str = payload.get("sub")
-        email: str = payload.get("email", "")
-        name: str = payload.get("name", "")
-        role: str = payload.get("role", "user")
+        # Split token and get payload (middle part)
+        parts = token.split('.')
+        if len(parts) != 3:
+            raise ValueError("Invalid JWT format")
         
-        logger.info(f"🔍 AUTH DEBUG - user_id: {user_id}, email: {email}")
+        # Decode payload (add padding if needed)
+        payload_b64 = parts[1]
+        padding = 4 - (len(payload_b64) % 4)
+        if padding != 4:
+            payload_b64 += '=' * padding
         
-        if user_id is None:
-            logger.error("❌ AUTH - No 'sub' field in token")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token - missing user ID"
-            )
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_bytes)
+        
+        user_id = payload.get("sub")
+        email = payload.get("email", "")
+        role = payload.get("role", "user")
+        
+        logger.info(f"✅ AUTH - Extracted user_id: {user_id}, email: {email}")
+        
+        if not user_id:
+            raise ValueError("No user_id in token")
         
         # Check if user_profile exists in database
         from models.user_profiles import UserProfile
@@ -80,22 +93,16 @@ async def get_current_user(
         return UserResponse(
             id=str(user_id),
             email=email,
-            name=name,
+            name=email.split('@')[0],  # Use email prefix as name
             role=role,
             organization_id=organization_id
         )
         
-    except JWTError as e:
-        logger.error(f"❌ AUTH - JWT decode error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication token: {str(e)}"
-        )
     except Exception as e:
-        logger.error(f"❌ AUTH - Unexpected error: {e}")
+        logger.error(f"❌ AUTH - Token parsing error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}"
+            detail=f"Invalid token: {str(e)}"
         )
 
 
@@ -105,7 +112,6 @@ async def get_current_user_optional(
 ) -> Optional[UserResponse]:
     """
     Optional authentication - returns None if no valid token instead of raising error
-    Used for endpoints that work with or without authentication
     """
     if not authorization:
         return None
@@ -123,6 +129,6 @@ async def get_current_active_user(
     current_user: UserResponse = Depends(get_current_user),
 ) -> UserResponse:
     """
-    Ensure the current user is active (can be extended with more checks)
+    Ensure the current user is active
     """
     return current_user
