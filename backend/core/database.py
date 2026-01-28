@@ -1,21 +1,31 @@
 """
-Database configuration and connection management
-Direct PostgreSQL connection (no Supabase SDK)
+Database configuration and session management
+Lazy initialization - no blocking on import
 """
 import logging
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create async engine
+# Create base class for models
+Base = declarative_base()
+
+# Create async engine - NO BLOCKING OPERATIONS HERE
 engine = create_async_engine(
     settings.database_url,
-    echo=False,  # Changed from settings.debug to False to avoid noise
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
+    echo=False,  # Disable SQL logging for performance
+    pool_pre_ping=True,  # Verify connections before using
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,  # 30 second timeout
+    connect_args={
+        "timeout": 10,  # 10 second connection timeout
+        "command_timeout": 10,  # 10 second command timeout
+    }
 )
 
 # Create async session factory
@@ -24,69 +34,38 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False
+    autoflush=False,
 )
 
-# Base class for models
-Base = declarative_base()
+logger.info("✅ Database engine created successfully")
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency for getting database session
+    Dependency to get database session
+    Creates session lazily on first request
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
             await session.rollback()
             raise
         finally:
             await session.close()
 
 
-class DatabaseManager:
-    """Manager for database operations"""
-    
-    def __init__(self):
-        self.engine = engine
-        self.session_factory = AsyncSessionLocal
-    
-    async def init_db(self):
-        """Initialize database tables"""
-        try:
-            logger.info("🔄 Initializing database tables...")
-            async with self.engine.begin() as conn:
-                # Import all models to register them
-                try:
-                    from models import (
-                        organizations, users, user_profiles, departments,
-                        biometric_data, biometric_indicator_ranges,
-                        ai_analysis_results, recommendations
-                    )
-                except ImportError as e:
-                    logger.warning(f"⚠️ Some models not found (this is OK for initial setup): {e}")
-                
-                # Create all tables
-                await conn.run_sync(Base.metadata.create_all)
-                logger.info("✅ Database tables initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {e}")
-            # Don't raise - allow app to start even if DB init fails
-            logger.warning("⚠️ Continuing without database initialization")
-    
-    async def health_check(self) -> bool:
-        """Check if database connection is healthy"""
-        try:
-            async with self.engine.connect() as conn:
-                await conn.execute("SELECT 1")
-                logger.info("✅ Database health check passed")
-                return True
-        except Exception as e:
-            logger.error(f"❌ Database health check failed: {e}")
-            return False
-
-
-# Global database manager instance
-db_manager = DatabaseManager()
+async def init_db():
+    """
+    Initialize database tables
+    Called lazily, not on startup
+    """
+    try:
+        logger.info("Initializing database tables...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("✅ Database tables initialized")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Don't raise - allow app to start even if DB init fails
