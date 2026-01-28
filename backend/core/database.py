@@ -1,91 +1,87 @@
-import asyncio
+"""
+Database configuration and connection management
+Direct PostgreSQL connection (no Supabase SDK)
+"""
 import logging
-import os
-from typing import AsyncGenerator
-
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from core.config import settings
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
+# Create async engine
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
+)
 
-class Base(DeclarativeBase):
-    pass
+# Create async session factory
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False
+)
+
+# Base class for models
+Base = declarative_base()
+
+
+async def get_db() -> AsyncSession:
+    """
+    Dependency for getting database session
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
 class DatabaseManager:
-    """Database manager with Supabase REST API support"""
+    """Manager for database operations"""
     
     def __init__(self):
-        self.engine = None
-        self._initialized = False
-        self.async_session_maker = None
-        self._init_lock = asyncio.Lock()
-        self.use_rest_api = True  # Flag to indicate using REST API instead of direct connection
+        self.engine = engine
+        self.session_factory = AsyncSessionLocal
     
     async def init_db(self):
-        """Initialize database connection - now using Supabase REST API"""
-        logger.info("🔧 Starting database initialization with Supabase REST API...")
-        
-        async with self._init_lock:
-            if self._initialized:
-                logger.info("Database already initialized")
-                return
-            
-            try:
-                # Import Supabase manager
-                from core.supabase_client import supabase_manager
-                
-                # Initialize Supabase REST API client
-                supabase_manager.init_client()
-                
-                # Verify connection
-                is_healthy = await supabase_manager.health_check()
-                if not is_healthy:
-                    logger.warning("Supabase health check failed, but continuing...")
-                
-                self._initialized = True
-                logger.info("✅ Database initialization completed successfully using Supabase REST API")
-                
-            except Exception as e:
-                logger.error(f"Failed to initialize database: {e}")
-                raise
-    
-    async def close_db(self):
-        """Close database connection"""
-        if not self._initialized:
-            return
-        
+        """Initialize database tables"""
         try:
-            logger.info("Database connection closed")
-            self._initialized = False
+            async with self.engine.begin() as conn:
+                # Import all models to register them
+                from models import (
+                    organizations, users, user_profiles, departments,
+                    biometric_data, biometric_indicator_ranges,
+                    ai_analysis_results, recommendations
+                )
+                
+                # Create all tables
+                await conn.run_sync(Base.metadata.create_all)
+                logger.info("✅ Database tables initialized successfully")
         except Exception as e:
-            logger.warning(f"Error closing database: {e}")
+            logger.error(f"Failed to initialize database: {e}")
+            raise
     
-    async def create_tables(self):
-        """Create tables - not needed with Supabase REST API (tables managed in Supabase dashboard)"""
-        logger.info("✅ Using Supabase REST API - tables are managed in Supabase dashboard")
-        return
+    async def health_check(self) -> bool:
+        """Check if database connection is healthy"""
+        try:
+            async with self.engine.connect() as conn:
+                await conn.execute("SELECT 1")
+                logger.info("✅ Database health check passed")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Database health check failed: {e}")
+            return False
 
 
 # Global database manager instance
 db_manager = DatabaseManager()
-
-
-async def get_db() -> AsyncGenerator[None, None]:
-    """
-    FastAPI dependency for database session
-    With Supabase REST API, this is a no-op but kept for compatibility
-    """
-    try:
-        yield None
-    finally:
-        pass
-
-
-# For backward compatibility with existing code
-async def get_async_session() -> AsyncGenerator[None, None]:
-    """Alias for get_db"""
-    async for session in get_db():
-        yield session
