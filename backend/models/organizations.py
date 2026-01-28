@@ -1,19 +1,38 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
-from sqlalchemy.dialects.postgresql import UUID
-from datetime import datetime
-import uuid
-
+"""
+Organizations model
+"""
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, JSON
+from sqlalchemy.sql import func
 from core.database import Base
 
 
 class Organizations(Base):
+    """Organizations table model"""
     __tablename__ = "organizations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    sector_id = Column(Integer, ForeignKey("param_sectors.id"), nullable=True)
-    industry_id = Column(Integer, ForeignKey("param_industries.id"), nullable=True)
-    logo_url = Column(Text, nullable=True)
-    brand_slogan = Column(Text, nullable=True)
-    welcome_message = Column(Text, nullable=True)
-    subscription_plan_id = Column(UUID(as_uuid=True), ForeignKey("subscription_plans.id"), nullable=True)
+    industry = Column(String)
+    size = Column(String)
+    contact_email = Column(String)
+    contact_phone = Column(String)
+    address = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class OrganizationBranding(Base):
+    """Organization branding configuration table model"""
+    __tablename__ = "organization_branding"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, nullable=False, index=True)
+    logo_url = Column(String)
+    primary_color = Column(String)
+    secondary_color = Column(String)
+    font_family = Column(String)
+    custom_css = Column(Text)
+    theme_settings = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
