@@ -2,7 +2,6 @@
 FastAPI Application Entry Point
 """
 import logging
-from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI
@@ -40,24 +39,12 @@ from routers import (
     param_industries,
 )
 
-logger.info("✅ All routers registered successfully")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan manager"""
-    logger.info("🚀 Starting FastAPI application...")
-    logger.info(f"📝 Environment: {getattr(settings, 'environment', 'development')}")
-    logger.info(f"🔗 Database URL configured: {bool(settings.database_url)}")
-    yield
-    logger.info("👋 Shutting down FastAPI application...")
-
+logger.info("✅ All routers imported successfully")
 
 app = FastAPI(
     title="HoloCheck Equilibria API",
     description="Backend API for HoloCheck Equilibria health monitoring platform",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 # CORS configuration
@@ -69,26 +56,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Root health check endpoint
+# Root health check endpoint - MUST be simple and fast
 @app.get("/")
 async def root():
-    """Root endpoint - health check"""
-    return {
-        "status": "healthy",
-        "service": "HoloCheck Equilibria API",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    """Root endpoint - simple health check for deployment"""
+    return {"status": "healthy"}
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for deployment verification"""
-    return {
-        "status": "healthy",
-        "service": "HoloCheck Equilibria API",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    """Health check endpoint - simple response for deployment verification"""
+    return {"status": "healthy"}
 
 
 # Register routers
@@ -113,7 +91,7 @@ app.include_router(organization_subscriptions.router)
 app.include_router(organization_usage_summary.router)
 app.include_router(param_industries.router)
 
-logger.info("✅ Application startup complete - ready to accept requests")
+logger.info("✅ Application startup complete")
 
 
 if __name__ == "__main__":
