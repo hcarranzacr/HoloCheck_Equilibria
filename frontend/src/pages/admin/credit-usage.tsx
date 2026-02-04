@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, TrendingUp, CheckCircle, XCircle, Activity } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import SectionHeader from '@/components/dashboard/SectionHeader';
+import { toast } from 'sonner';
 
 interface UsageLog {
   id: string;
@@ -29,47 +30,35 @@ export default function AdminCreditUsage() {
     try {
       setLoading(true);
 
-      // Get all organizations
-      const { data: orgs, error: orgsError } = await supabase
-        .from('organizations')
-        .select('id, name');
+      console.log('🔍 Loading credit usage via apiClient...');
 
-      if (orgsError) {
-        console.error('Error loading organizations:', orgsError);
-      }
+      // Get all organizations via apiClient
+      const orgsResponse = await apiClient.organizations.list({ limit: 1000 });
+      const orgs = orgsResponse.items || [];
 
-      // Get all user profiles
-      const { data: users, error: usersError } = await supabase
-        .from('user_profiles')
-        .select('user_id, full_name');
+      // Get all user profiles via apiClient
+      const usersResponse = await apiClient.userProfiles.listAll({ limit: 10000 });
+      const users = usersResponse.items || [];
 
-      if (usersError) {
-        console.error('Error loading users:', usersError);
-      }
-
-      // Get subscription usage logs
-      const { data: logs, error: logsError } = await supabase
-        .from('subscription_usage_logs')
-        .select('*')
-        .order('used_at', { ascending: false })
-        .limit(200);
-
-      if (logsError) {
-        console.error('Error loading usage logs:', logsError);
-        return;
-      }
+      // Get subscription usage logs via apiClient
+      const logsResponse = await apiClient.subscriptionUsageLogs.listAll({
+        limit: 200,
+        sort: '-used_at',
+      });
+      const logs = logsResponse.items || [];
 
       // Map organization and user names to logs
-      const logsWithNames = logs?.map(log => ({
+      const logsWithNames = logs.map((log: any) => ({
         ...log,
-        organization_name: orgs?.find(org => org.id === log.organization_id)?.name || 'Desconocida',
-        user_name: users?.find(user => user.user_id === log.user_id)?.full_name || 'Usuario Desconocido'
-      })) || [];
+        organization_name: orgs.find((org: any) => org.id === log.organization_id)?.name || 'Desconocida',
+        user_name: users.find((user: any) => user.user_id === log.user_id)?.full_name || 'Usuario Desconocido'
+      }));
 
       console.log('✅ Loaded', logsWithNames.length, 'credit usage logs');
       setUsageLogs(logsWithNames);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading credit usage:', error);
+      toast.error('Error al cargar uso de créditos: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }

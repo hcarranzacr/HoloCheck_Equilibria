@@ -13,6 +13,7 @@ import AuthCallback from './pages/AuthCallback';
 import LogoutCallbackPage from './pages/LogoutCallbackPage';
 import Unauthorized from './pages/Unauthorized';
 import NotFound from './pages/NotFound';
+import Lobby from './pages/Lobby';
 
 // Employee pages
 import EmployeeDashboard from './pages/employee/Dashboard';
@@ -78,6 +79,7 @@ const queryClient = new QueryClient();
 const App = () => {
   console.log('🚀 [App] HoloCheck Equilibria - ALL ROUTES REGISTERED');
   console.log('🎨 [App] Multitenant branding enabled with auto-detection');
+  console.log('🏠 [App] Lobby route: /lobby');
   console.log('📋 [App] Employee routes: /employee/dashboard, /employee/recommendations, /employee/scan');
   console.log('📋 [App] Leader routes: /leader/dashboard, /leader/team, /leader/insights');
   console.log('📋 [App] HR routes: /hr/dashboard, /hr/insights, /hr/measurements');
@@ -100,11 +102,15 @@ const App = () => {
                 <Route path="/logout-callback" element={<LogoutCallbackPage />} />
                 <Route path="/unauthorized" element={<Unauthorized />} />
                 
-                {/* Protected routes WITH layout */}
+                {/* Protected routes */}
                 <Route element={<ProtectedRoute />}>
+                  {/* Lobby page - WITHOUT AppLayout */}
+                  <Route path="/lobby" element={<Lobby />} />
+                  
+                  {/* Routes WITH AppLayout */}
                   <Route element={<AppLayout />}>
-                    {/* Root redirect */}
-                    <Route path="/" element={<Navigate to="/employee/dashboard" replace />} />
+                    {/* Root redirect to lobby */}
+                    <Route path="/" element={<Navigate to="/lobby" replace />} />
                     
                     {/* User Manual - Available for all roles */}
                     <Route path="/user-manual" element={<UserManual />} />

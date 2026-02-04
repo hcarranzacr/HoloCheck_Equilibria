@@ -16,7 +16,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.supabase_client import get_supabase_client
+from core.supabase_client import get_supabase_admin
 from dependencies.auth import get_current_user
 from schemas.auth import UserResponse
 
@@ -159,7 +159,7 @@ class OrgBenefitIndicatorLinkUpdate(BaseModel):
 async def get_partners(current_user: UserResponse = Depends(get_current_user)):
     """Get all partners"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('partners').select('*').order('name').execute()
         return {"partners": response.data or []}
     except Exception as e:
@@ -170,7 +170,7 @@ async def get_partners(current_user: UserResponse = Depends(get_current_user)):
 async def create_partner(data: PartnerCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new partner"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('partners').insert(data.dict()).execute()
         return {"partner": response.data[0] if response.data else None}
     except Exception as e:
@@ -181,7 +181,7 @@ async def create_partner(data: PartnerCreate, current_user: UserResponse = Depen
 async def update_partner(partner_id: UUID, data: PartnerUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update a partner"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('partners').update(update_data).eq('id', str(partner_id)).execute()
         return {"partner": response.data[0] if response.data else None}
@@ -193,7 +193,7 @@ async def update_partner(partner_id: UUID, data: PartnerUpdate, current_user: Us
 async def delete_partner(partner_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete a partner"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('partners').delete().eq('id', str(partner_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -207,7 +207,7 @@ async def delete_partner(partner_id: UUID, current_user: UserResponse = Depends(
 async def get_programs(partner_id: Optional[UUID] = None, current_user: UserResponse = Depends(get_current_user)):
     """Get all partner programs"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         query = supabase.table('partner_programs').select('*')
         if partner_id:
             query = query.eq('partner_id', str(partner_id))
@@ -221,7 +221,7 @@ async def get_programs(partner_id: Optional[UUID] = None, current_user: UserResp
 async def create_program(data: PartnerProgramCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('partner_programs').insert(data.dict()).execute()
         return {"program": response.data[0] if response.data else None}
     except Exception as e:
@@ -232,7 +232,7 @@ async def create_program(data: PartnerProgramCreate, current_user: UserResponse 
 async def update_program(program_id: UUID, data: PartnerProgramUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update a partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('partner_programs').update(update_data).eq('id', str(program_id)).execute()
         return {"program": response.data[0] if response.data else None}
@@ -244,7 +244,7 @@ async def update_program(program_id: UUID, data: PartnerProgramUpdate, current_u
 async def delete_program(program_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete a partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('partner_programs').delete().eq('id', str(program_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -258,7 +258,7 @@ async def delete_program(program_id: UUID, current_user: UserResponse = Depends(
 async def get_benefits(partner_id: Optional[UUID] = None, current_user: UserResponse = Depends(get_current_user)):
     """Get all partner benefits"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         query = supabase.table('partner_benefits').select('*')
         if partner_id:
             query = query.eq('partner_id', str(partner_id))
@@ -272,7 +272,7 @@ async def get_benefits(partner_id: Optional[UUID] = None, current_user: UserResp
 async def create_benefit(data: PartnerBenefitCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new partner benefit"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('partner_benefits').insert(data.dict()).execute()
         return {"benefit": response.data[0] if response.data else None}
     except Exception as e:
@@ -283,7 +283,7 @@ async def create_benefit(data: PartnerBenefitCreate, current_user: UserResponse 
 async def update_benefit(benefit_id: UUID, data: PartnerBenefitUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update a partner benefit"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('partner_benefits').update(update_data).eq('id', str(benefit_id)).execute()
         return {"benefit": response.data[0] if response.data else None}
@@ -295,7 +295,7 @@ async def update_benefit(benefit_id: UUID, data: PartnerBenefitUpdate, current_u
 async def delete_benefit(benefit_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete a partner benefit"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('partner_benefits').delete().eq('id', str(benefit_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -309,7 +309,7 @@ async def delete_benefit(benefit_id: UUID, current_user: UserResponse = Depends(
 async def get_org_partner_links(organization_id: Optional[UUID] = None, current_user: UserResponse = Depends(get_current_user)):
     """Get all organization-partner links"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         query = supabase.table('organization_partner_links').select('*')
         if organization_id:
             query = query.eq('organization_id', str(organization_id))
@@ -323,7 +323,7 @@ async def get_org_partner_links(organization_id: Optional[UUID] = None, current_
 async def create_org_partner_link(data: OrgPartnerLinkCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new organization-partner link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('organization_partner_links').insert(data.dict()).execute()
         return {"link": response.data[0] if response.data else None}
     except Exception as e:
@@ -334,7 +334,7 @@ async def create_org_partner_link(data: OrgPartnerLinkCreate, current_user: User
 async def update_org_partner_link(link_id: UUID, data: OrgPartnerLinkUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update an organization-partner link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('organization_partner_links').update(update_data).eq('id', str(link_id)).execute()
         return {"link": response.data[0] if response.data else None}
@@ -346,7 +346,7 @@ async def update_org_partner_link(link_id: UUID, data: OrgPartnerLinkUpdate, cur
 async def delete_org_partner_link(link_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete an organization-partner link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('organization_partner_links').delete().eq('id', str(link_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -360,7 +360,7 @@ async def delete_org_partner_link(link_id: UUID, current_user: UserResponse = De
 async def get_org_partner_programs(organization_id: Optional[UUID] = None, current_user: UserResponse = Depends(get_current_user)):
     """Get all organization-partner programs"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         query = supabase.table('organization_partner_programs').select('*')
         if organization_id:
             query = query.eq('organization_id', str(organization_id))
@@ -374,7 +374,7 @@ async def get_org_partner_programs(organization_id: Optional[UUID] = None, curre
 async def create_org_partner_program(data: OrgPartnerProgramCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new organization-partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('organization_partner_programs').insert(data.dict()).execute()
         return {"program": response.data[0] if response.data else None}
     except Exception as e:
@@ -385,7 +385,7 @@ async def create_org_partner_program(data: OrgPartnerProgramCreate, current_user
 async def update_org_partner_program(program_id: UUID, data: OrgPartnerProgramUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update an organization-partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('organization_partner_programs').update(update_data).eq('id', str(program_id)).execute()
         return {"program": response.data[0] if response.data else None}
@@ -397,7 +397,7 @@ async def update_org_partner_program(program_id: UUID, data: OrgPartnerProgramUp
 async def delete_org_partner_program(program_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete an organization-partner program"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('organization_partner_programs').delete().eq('id', str(program_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -411,7 +411,7 @@ async def delete_org_partner_program(program_id: UUID, current_user: UserRespons
 async def get_org_benefit_indicator_links(organization_id: Optional[UUID] = None, current_user: UserResponse = Depends(get_current_user)):
     """Get all organization-benefit-indicator links"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         query = supabase.table('organization_benefit_indicator_links').select('*')
         if organization_id:
             query = query.eq('organization_id', str(organization_id))
@@ -425,7 +425,7 @@ async def get_org_benefit_indicator_links(organization_id: Optional[UUID] = None
 async def create_org_benefit_indicator_link(data: OrgBenefitIndicatorLinkCreate, current_user: UserResponse = Depends(get_current_user)):
     """Create a new organization-benefit-indicator link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('organization_benefit_indicator_links').insert(data.dict()).execute()
         return {"link": response.data[0] if response.data else None}
     except Exception as e:
@@ -436,7 +436,7 @@ async def create_org_benefit_indicator_link(data: OrgBenefitIndicatorLinkCreate,
 async def update_org_benefit_indicator_link(link_id: UUID, data: OrgBenefitIndicatorLinkUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Update an organization-benefit-indicator link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         update_data = {k: v for k, v in data.dict().items() if v is not None}
         response = supabase.table('organization_benefit_indicator_links').update(update_data).eq('id', str(link_id)).execute()
         return {"link": response.data[0] if response.data else None}
@@ -448,7 +448,7 @@ async def update_org_benefit_indicator_link(link_id: UUID, data: OrgBenefitIndic
 async def delete_org_benefit_indicator_link(link_id: UUID, current_user: UserResponse = Depends(get_current_user)):
     """Delete an organization-benefit-indicator link"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         supabase.table('organization_benefit_indicator_links').delete().eq('id', str(link_id)).execute()
         return {"success": True}
     except Exception as e:
@@ -462,7 +462,7 @@ async def delete_org_benefit_indicator_link(link_id: UUID, current_user: UserRes
 async def get_organizations(current_user: UserResponse = Depends(get_current_user)):
     """Get all organizations for dropdowns"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('organizations').select('id, name').order('name').execute()
         return {"organizations": response.data or []}
     except Exception as e:
@@ -473,7 +473,7 @@ async def get_organizations(current_user: UserResponse = Depends(get_current_use
 async def get_indicators(current_user: UserResponse = Depends(get_current_user)):
     """Get all biometric indicators for dropdowns"""
     try:
-        supabase = get_supabase_client()
+        supabase = get_supabase_admin()
         response = supabase.table('param_biometric_indicators_info').select('indicator_code, indicator_name').order('indicator_name').execute()
         return {"indicators": response.data or []}
     except Exception as e:

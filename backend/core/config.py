@@ -14,15 +14,14 @@ class Settings(BaseSettings):
     debug: bool = True
     port: int = 8000
     
-    # Supabase Configuration
+    # Supabase Configuration - Using the exact keys provided by user
     supabase_url: str
-    supabase_key: str
-    supabase_service_role_key: Optional[str] = None
+    supabase_anon_key: str
+    supabase_service_role_key: str
     
-    # JWT Configuration
-    jwt_secret: str = "your-secret-key-here"
-    jwt_algorithm: str = "HS256"
-    jwt_expiration_minutes: int = 30
+    # Frontend/Backend URLs
+    frontend_url: str = "http://localhost:5173"
+    backend_url: str = "http://localhost:8000"
     
     # CORS Configuration
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -36,7 +35,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "allow"  # Allow extra fields from .env
+        extra = "allow"
 
 
 settings = Settings()

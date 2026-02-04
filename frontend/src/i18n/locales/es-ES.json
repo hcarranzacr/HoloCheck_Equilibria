@@ -1,0 +1,37 @@
+{
+  "healthStatus": {
+    "title": "Estado del Sistema",
+    "allSystemsOperational": "Todos los sistemas conectados y operativos",
+    "systemDegraded": "Todos los sistemas conectados pero con retrasos",
+    "systemDown": "Conexión fallida - sistema no disponible",
+    "statusUnknown": "No se puede determinar el estado de conectividad",
+    "refresh": "Actualizar",
+    "refreshing": "Actualizando...",
+    "lastUpdated": "Última actualización",
+    "services": {
+      "frontend": "Frontend",
+      "backend": "API Backend",
+      "database": "Base de Datos",
+      "auth": "Autenticación"
+    },
+    "status": {
+      "green": "Operativo",
+      "amber": "Degradado",
+      "red": "Caído",
+      "grey": "Desconocido"
+    },
+    "metrics": {
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "responseTime": "Tiempo de respuesta",
+      "lastChecked": "Última verificación",
+      "lastSuccessful": "Última conexión exitosa",
+      "ms": "ms"
+    },
+    "database": {
+      "green": "Base de datos con rendimiento excelente (< 1s)",
+      "amber": "Carga de base de datos normal para operaciones intensivas (1-5s)",
+      "red": "Conexión a base de datos fallida o timeout (> 10s)"
+    }
+  }
+}

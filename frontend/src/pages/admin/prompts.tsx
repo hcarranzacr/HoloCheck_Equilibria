@@ -3,8 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { MessageSquare, TrendingUp, Calendar, Eye, Settings } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import SectionHeader from '@/components/dashboard/SectionHeader';
+import { toast } from 'sonner';
 
 interface PromptTemplate {
   id: string;
@@ -55,65 +56,62 @@ export default function AdminPrompts() {
     try {
       setLoading(true);
 
-      // Get prompt templates
-      const { data: templatesData, error: templatesError } = await supabase
-        .from('param_prompt_templates')
-        .select('*')
-        .order('scope', { ascending: true })
-        .order('type', { ascending: true });
+      console.log('🔍 Loading prompts data via apiClient...');
 
-      if (templatesError) {
-        console.error('Error loading templates:', templatesError);
-      } else {
-        console.log('✅ Loaded', templatesData?.length || 0, 'prompt templates');
-        setTemplates(templatesData || []);
+      // Get prompt templates via apiClient
+      try {
+        const templatesResponse = await apiClient.paramPromptTemplates.listAll({
+          limit: 1000,
+          sort: 'scope,type',
+        });
+        const templatesData = templatesResponse.items || [];
+        console.log('✅ Loaded', templatesData.length, 'prompt templates');
+        setTemplates(templatesData);
+      } catch (error) {
+        console.error('Error loading templates:', error);
       }
 
-      // Get AI prompt configs
-      const { data: configsData, error: configsError } = await supabase
-        .from('param_ai_prompt_configs')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (configsError) {
-        console.error('Error loading AI configs:', configsError);
-      } else {
-        console.log('✅ Loaded', configsData?.length || 0, 'AI prompt configs');
-        setAiConfigs(configsData || []);
+      // Get AI prompt configs via apiClient
+      try {
+        const configsResponse = await apiClient.paramAiPromptConfigs.listAll({
+          limit: 1000,
+          sort: '-created_at',
+        });
+        const configsData = configsResponse.items || [];
+        console.log('✅ Loaded', configsData.length, 'AI prompt configs');
+        setAiConfigs(configsData);
+      } catch (error) {
+        console.error('Error loading AI configs:', error);
       }
 
       // Get organizations and users for mapping
-      const { data: orgs } = await supabase
-        .from('organizations')
-        .select('id, name');
+      const orgsResponse = await apiClient.organizations.list({ limit: 1000 });
+      const orgs = orgsResponse.items || [];
 
-      const { data: users } = await supabase
-        .from('user_profiles')
-        .select('user_id, full_name');
+      const usersResponse = await apiClient.userProfiles.listAll({ limit: 10000 });
+      const users = usersResponse.items || [];
 
-      // Get prompt usage logs
-      const { data: logsData, error: logsError } = await supabase
-        .from('param_prompt_usage_logs')
-        .select('*')
-        .order('used_at', { ascending: false })
-        .limit(100);
-
-      if (logsError) {
-        console.error('Error loading usage logs:', logsError);
-      } else {
+      // Get prompt usage logs via apiClient (if endpoint exists)
+      try {
+        const logsResponse = await apiClient.call('/api/v1/param-prompt-usage-logs?limit=100&sort=-used_at', 'GET');
+        const logsData = logsResponse.items || logsResponse || [];
+        
         // Map template types, user names, and org names to logs
-        const logsWithDetails = logsData?.map(log => ({
+        const logsWithDetails = logsData.map((log: any) => ({
           ...log,
-          template_type: templatesData?.find(t => t.id === log.template_id)?.type || 'Desconocido',
-          user_name: users?.find(u => u.user_id === log.user_id)?.full_name || 'Usuario Desconocido',
-          organization_name: orgs?.find(o => o.id === log.organization_id)?.name || 'Organización Desconocida'
-        })) || [];
+          template_type: templates.find((t: any) => t.id === log.template_id)?.type || 'Desconocido',
+          user_name: users.find((u: any) => u.user_id === log.user_id)?.full_name || 'Usuario Desconocido',
+          organization_name: orgs.find((o: any) => o.id === log.organization_id)?.name || 'Organización Desconocida'
+        }));
 
         console.log('✅ Loaded', logsWithDetails.length, 'prompt usage logs');
         setUsageLogs(logsWithDetails);
+      } catch (error) {
+        console.error('Error loading usage logs:', error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading prompts data:', error);
+      toast.error('Error al cargar datos de prompts: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }

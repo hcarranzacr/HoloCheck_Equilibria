@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
-from core.supabase_client import get_supabase_client
+from core.supabase_client import get_supabase_admin
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class DashboardServiceSupabase:
     """Service layer for dashboard data aggregation using Supabase REST API."""
 
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_admin()
 
     # ==================== EMPLOYEE DASHBOARD ====================
     

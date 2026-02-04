@@ -1,64 +1,98 @@
-import base64
-import json
+"""
+Autenticación simplificada usando Supabase Admin Client.
+
+REGLA: No validar JWT tokens. El user_id viene del frontend como Bearer token.
+Backend confía en el user_id y valida su existencia en user_profiles.
+"""
+
+import logging
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from core.supabase_client import get_supabase_admin
 from schemas.auth import UserResponse
-import logging
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> UserResponse:
     """
-    Extract user info from JWT token without decoding/verification.
-    Parses the payload manually from base64.
+    Obtiene el usuario actual desde user_profiles usando el user_id del Bearer token.
+    
+    NO valida JWT. Asume que el frontend envía user_id válido.
+    Valida existencia en user_profiles usando Supabase Admin Client.
     """
     try:
-        token = credentials.credentials
+        user_id = credentials.credentials
+        logger.info(f"🔍 Buscando usuario: {user_id}")
         
-        # Split JWT: header.payload.signature
-        parts = token.split('.')
-        if len(parts) != 3:
-            raise HTTPException(status_code=401, detail="Invalid token format")
+        # Usar cliente admin centralizado
+        supabase = get_supabase_admin()
         
-        # Decode payload from base64
-        payload_encoded = parts[1]
-        # Add padding if needed
-        padding = 4 - len(payload_encoded) % 4
-        if padding != 4:
-            payload_encoded += '=' * padding
+        # Consultar user_profiles
+        response = supabase.table('user_profiles').select('*').eq('user_id', user_id).execute()
         
-        payload_bytes = base64.urlsafe_b64decode(payload_encoded)
-        payload = json.loads(payload_bytes)
+        if not response.data or len(response.data) == 0:
+            logger.error(f"❌ Usuario no encontrado: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
         
-        # Extract user info from payload
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Missing user ID in token")
+        user_data = response.data[0]
+        logger.info(f"✅ Usuario encontrado: {user_data['email']}")
         
         return UserResponse(
-            id=user_id,
-            email=payload.get("email", ""),
-            role=payload.get("user_metadata", {}).get("role", "employee"),
-            organization_id=payload.get("user_metadata", {}).get("organization_id")
+            id=user_data['user_id'],
+            email=user_data['email'],
+            name=user_data.get('full_name'),
+            role=user_data.get('role', 'employee'),
+            organization_id=user_data.get('organization_id'),
+            created_at=user_data.get('created_at', '')
         )
-    except json.JSONDecodeError as e:
-        logger.error(f"JWT payload decode error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Authentication error: {e}")
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+        logger.error(f"❌ Error de autenticación: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication failed: {str(e)}"
+        )
 
 
 async def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> UserResponse | None:
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security)
+) -> Optional[UserResponse]:
     """
-    Optional authentication - returns None if token is invalid.
+    Autenticación opcional. Retorna usuario si existe, None si no.
     """
+    if not credentials:
+        return None
+    
     try:
-        return await get_current_user(credentials)
-    except HTTPException:
+        user_id = credentials.credentials
+        supabase = get_supabase_admin()
+        
+        response = supabase.table('user_profiles').select('*').eq('user_id', user_id).execute()
+        
+        if not response.data:
+            return None
+        
+        user_data = response.data[0]
+        
+        return UserResponse(
+            id=user_data['user_id'],
+            email=user_data['email'],
+            name=user_data.get('full_name'),
+            role=user_data.get('role', 'employee'),
+            organization_id=user_data.get('organization_id'),
+            created_at=user_data.get('created_at', '')
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Autenticación opcional falló: {e}")
         return None

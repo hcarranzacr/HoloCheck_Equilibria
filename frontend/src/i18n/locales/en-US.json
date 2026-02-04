@@ -1,0 +1,37 @@
+{
+  "healthStatus": {
+    "title": "System Status",
+    "allSystemsOperational": "All systems connected and operational",
+    "systemDegraded": "All systems connected but experiencing delays",
+    "systemDown": "Connection failed - system unavailable",
+    "statusUnknown": "Unable to determine connectivity status",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "lastUpdated": "Last updated",
+    "services": {
+      "frontend": "Frontend",
+      "backend": "Backend API",
+      "database": "Database",
+      "auth": "Authentication"
+    },
+    "status": {
+      "green": "Operational",
+      "amber": "Degraded",
+      "red": "Down",
+      "grey": "Unknown"
+    },
+    "metrics": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "responseTime": "Response time",
+      "lastChecked": "Last checked",
+      "lastSuccessful": "Last successful",
+      "ms": "ms"
+    },
+    "database": {
+      "green": "Database performing excellently (< 1s)",
+      "amber": "Database load normal for intensive operations (1-5s)",
+      "red": "Database connection failed or timeout (> 10s)"
+    }
+  }
+}

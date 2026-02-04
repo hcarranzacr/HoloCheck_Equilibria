@@ -673,7 +673,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Estrés Promedio</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.avg_stress || '0')} className="flex-1 h-2 bg-orange-100" />
+                            <Progress value={parseFloat(String(insight.avg_stress || '0'))} className="flex-1 h-2 bg-orange-100" />
                             <span className="text-sm font-bold text-orange-600">{insight.avg_stress?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -683,7 +683,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Fatiga Promedio</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.avg_fatigue || '0')} className="flex-1 h-2 bg-gray-100" />
+                            <Progress value={parseFloat(String(insight.avg_fatigue || '0'))} className="flex-1 h-2 bg-gray-100" />
                             <span className="text-sm font-bold text-gray-600">{insight.avg_fatigue?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -693,7 +693,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Carga Cognitiva</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.avg_cognitive_load || '0')} className="flex-1 h-2 bg-purple-100" />
+                            <Progress value={parseFloat(String(insight.avg_cognitive_load || '0'))} className="flex-1 h-2 bg-purple-100" />
                             <span className="text-sm font-bold text-purple-600">{insight.avg_cognitive_load?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -703,7 +703,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Recuperación</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.avg_recovery || '0')} className="flex-1 h-2 bg-green-100" />
+                            <Progress value={parseFloat(String(insight.avg_recovery || '0'))} className="flex-1 h-2 bg-green-100" />
                             <span className="text-sm font-bold text-green-600">{insight.avg_recovery?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -713,7 +713,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Brecha Edad Bio.</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={Math.abs(parseFloat(insight.avg_bio_age_gap || '0'))} className="flex-1 h-2 bg-indigo-100" />
+                            <Progress value={Math.abs(parseFloat(String(insight.avg_bio_age_gap || '0')))} className="flex-1 h-2 bg-indigo-100" />
                             <span className="text-sm font-bold text-indigo-600">{insight.avg_bio_age_gap?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -723,7 +723,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Riesgo Burnout</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.burnout_risk_score || '0') * 10} className="flex-1 h-2 bg-red-100" />
+                            <Progress value={parseFloat(String(insight.burnout_risk_score || '0')) * 10} className="flex-1 h-2 bg-red-100" />
                             <span className="text-sm font-bold text-red-600">{insight.burnout_risk_score?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -733,7 +733,7 @@ export default function HRDashboard() {
                         <CardContent className="pt-4">
                           <p className="text-xs text-muted-foreground mb-2">Puntuación Riesgo</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(insight.risk_score || '0') * 10} className="flex-1 h-2 bg-yellow-100" />
+                            <Progress value={parseFloat(String(insight.risk_score || '0')) * 10} className="flex-1 h-2 bg-yellow-100" />
                             <span className="text-sm font-bold text-yellow-600">{insight.risk_score?.toFixed(1)}</span>
                           </div>
                         </CardContent>
@@ -792,21 +792,21 @@ export default function HRDashboard() {
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Estrés</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(dept.avg_stress || '0')} className="flex-1 h-2" />
+                            <Progress value={parseFloat(String(dept.avg_stress || '0'))} className="flex-1 h-2" />
                             <span className="text-sm font-medium">{dept.avg_stress?.toFixed(1)}</span>
                           </div>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Fatiga</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(dept.avg_fatigue || '0')} className="flex-1 h-2" />
+                            <Progress value={parseFloat(String(dept.avg_fatigue || '0'))} className="flex-1 h-2" />
                             <span className="text-sm font-medium">{dept.avg_fatigue?.toFixed(1)}</span>
                           </div>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Recuperación</p>
                           <div className="flex items-center gap-2">
-                            <Progress value={parseFloat(dept.avg_recovery || '0')} className="flex-1 h-2" />
+                            <Progress value={parseFloat(String(dept.avg_recovery || '0'))} className="flex-1 h-2" />
                             <span className="text-sm font-medium">{dept.avg_recovery?.toFixed(1)}</span>
                           </div>
                         </div>

@@ -152,13 +152,12 @@ class ApiClient {
       const response = await this.client.entities.user_profiles.get(params);
       return response.data;
     },
-    list: async (organizationId?: string) => {
-      const query = organizationId ? { organization_id: organizationId } : {};
-      const response = await this.client.entities.user_profiles.query({ query });
+    list: async (params?: any) => {
+      const response = await this.client.entities.user_profiles.query(params || {});
       return { data: response.data, items: response.data.items };
     },
-    listAll: async () => {
-      const response = await this.client.entities.user_profiles.queryAll({});
+    listAll: async (params?: any) => {
+      const response = await this.client.entities.user_profiles.queryAll(params || {});
       return { data: response.data, items: response.data.items };
     },
     create: async (data: any) => {
@@ -169,8 +168,8 @@ class ApiClient {
       const response = await this.client.entities.user_profiles.update({ id, data });
       return response.data;
     },
-    delete: async (params: any) => {
-      return await this.client.entities.user_profiles.delete(params);
+    delete: async (id: string) => {
+      return await this.client.entities.user_profiles.delete({ id });
     }
   };
 
@@ -184,8 +183,8 @@ class ApiClient {
       const response = await this.client.entities.organizations.queryAll(params);
       return { data: response.data, items: response.data.items };
     },
-    list: async () => {
-      const response = await this.client.entities.organizations.queryAll({});
+    list: async (params?: any) => {
+      const response = await this.client.entities.organizations.queryAll(params || {});
       return { data: response.data, items: response.data.items };
     },
     get: async (id: string) => {
@@ -204,28 +203,28 @@ class ApiClient {
       const response = await this.client.entities.departments.queryAll(params);
       return { data: response.data, items: response.data.items };
     },
-    list: async () => {
-      const response = await this.client.entities.departments.queryAll({});
+    list: async (params?: any) => {
+      const response = await this.client.entities.departments.queryAll(params || {});
       return { data: response.data, items: response.data.items };
     },
-    listAll: async () => {
-      const response = await this.client.entities.departments.queryAll({});
+    listAll: async (params?: any) => {
+      const response = await this.client.entities.departments.queryAll(params || {});
       return { data: response.data, items: response.data.items };
     },
     get: async (id: string) => {
       const response = await this.client.entities.departments.get({ id });
       return response.data;
     },
-    create: async (params: any) => {
-      const response = await this.client.entities.departments.create(params);
+    create: async (data: any) => {
+      const response = await this.client.entities.departments.create({ data });
       return response.data;
     },
-    update: async (params: any) => {
-      const response = await this.client.entities.departments.update(params);
+    update: async (id: string, data: any) => {
+      const response = await this.client.entities.departments.update({ id, data });
       return response.data;
     },
-    delete: async (params: any) => {
-      return await this.client.entities.departments.delete(params);
+    delete: async (id: string) => {
+      return await this.client.entities.departments.delete({ id });
     }
   };
 
@@ -241,6 +240,100 @@ class ApiClient {
     },
     create: async (data: any) => {
       const response = await this.client.entities.biometric_measurements.create({ data });
+      return response.data;
+    }
+  };
+
+  // Subscription Usage Logs namespace (read-only for admin)
+  subscriptionUsageLogs = {
+    list: async (params?: any) => {
+      const response = await this.client.entities.subscription_usage_logs.query(params || {});
+      return { data: response.data, items: response.data.items };
+    },
+    listAll: async (params?: any) => {
+      const response = await this.client.entities.subscription_usage_logs.queryAll(params || {});
+      return { data: response.data, items: response.data.items };
+    },
+    get: async (id: string) => {
+      const response = await this.client.entities.subscription_usage_logs.get({ id });
+      return response.data;
+    }
+  };
+
+  // Param Prompt Templates namespace (read-only)
+  paramPromptTemplates = {
+    list: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: '/api/v1/param-prompt-templates',
+        method: 'GET',
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return { data: response.data, items: response.data.items || response.data };
+    },
+    listAll: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: '/api/v1/param-prompt-templates/all',
+        method: 'GET',
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return { data: response.data, items: response.data.items || response.data };
+    },
+    get: async (id: string) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: `/api/v1/param-prompt-templates/${id}`,
+        method: 'GET',
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return response.data;
+    }
+  };
+
+  // Param AI Prompt Configs namespace (read-only)
+  paramAiPromptConfigs = {
+    list: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: '/api/v1/param-ai-prompt-configs',
+        method: 'GET',
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return { data: response.data, items: response.data.items || response.data };
+    },
+    listAll: async (params?: any) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: '/api/v1/param-ai-prompt-configs/all',
+        method: 'GET',
+        data: params || {},
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
+      return { data: response.data, items: response.data.items || response.data };
+    },
+    get: async (id: string) => {
+      const token = await getAuthToken();
+      const response = await this.client.apiCall.invoke({
+        url: `/api/v1/param-ai-prompt-configs/${id}`,
+        method: 'GET',
+        options: {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
+      });
       return response.data;
     }
   };
@@ -319,27 +412,28 @@ class ApiClient {
       const response = await this.client.entities.prompts.queryAll(params);
       return { data: response.data, items: response.data.items };
     },
-    create: async (params: any) => {
-      const response = await this.client.entities.prompts.create(params);
+    create: async (data: any) => {
+      const response = await this.client.entities.prompts.create({ data });
       return response.data;
     },
-    update: async (params: any) => {
-      const response = await this.client.entities.prompts.update(params);
+    update: async (id: string, data: any) => {
+      const response = await this.client.entities.prompts.update({ id, data });
       return response.data;
     },
-    delete: async (params: any) => {
-      return await this.client.entities.prompts.delete(params);
+    delete: async (id: string) => {
+      return await this.client.entities.prompts.delete({ id });
     }
   };
 
   // Audit log method - updated signature to match usage
-  async logAudit(userId: string, action: string, entityType: string, details: any) {
+  async logAudit(action: string, entityType: string, entityId?: string, details?: any) {
     try {
       const token = await getAuthToken();
+      const user = await this.getCurrentUser();
       await this.client.apiCall.invoke({
         url: '/api/v1/audit-logs',
         method: 'POST',
-        data: { user_id: userId, action, entity_type: entityType, details },
+        data: { user_id: user?.id, action, entity_type: entityType, entity_id: entityId, details },
         options: {
           headers: token ? { 'Authorization': `Bearer ${token}` } : {}
         }

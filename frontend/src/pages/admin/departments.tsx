@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import {
   Table,
@@ -33,9 +33,7 @@ interface Department {
   name: string;
   organization_id: string;
   created_at: string;
-  organizations?: {
-    name: string;
-  };
+  organization_name?: string;
 }
 
 interface Organization {
@@ -66,43 +64,29 @@ export default function AdminDepartments() {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading departments and organizations from Supabase...');
+      console.log('🔍 Loading departments and organizations via apiClient...');
 
-      // Load organizations
-      const { data: orgsData, error: orgsError } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .order('name', { ascending: true });
+      // Load organizations via apiClient
+      const orgsResponse = await apiClient.organizations.list({ limit: 100, sort: 'name' });
+      const orgsData = orgsResponse.items || [];
+      console.log('✅ Loaded', orgsData.length, 'organizations');
+      setOrganizations(orgsData);
 
-      if (orgsError) {
-        console.error('❌ Error loading organizations:', orgsError);
-        throw orgsError;
-      }
+      // Load ALL departments via apiClient
+      const deptsResponse = await apiClient.departments.listAll({ limit: 1000, sort: '-created_at' });
+      const deptsData = deptsResponse.items || [];
+      
+      // Map organization names to departments
+      const deptsWithOrgNames = deptsData.map((dept: any) => ({
+        ...dept,
+        organization_name: orgsData.find((org: any) => org.id === dept.organization_id)?.name || 'Unknown'
+      }));
 
-      console.log('✅ Loaded', orgsData?.length || 0, 'organizations');
-      setOrganizations(orgsData || []);
-
-      // Load ALL departments with organization names
-      const { data: deptsData, error: deptsError } = await supabase
-        .from('departments')
-        .select(`
-          *,
-          organizations (
-            name
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (deptsError) {
-        console.error('❌ Error loading departments:', deptsError);
-        throw deptsError;
-      }
-
-      console.log('✅ Loaded', deptsData?.length || 0, 'departments');
-      setDepartments(deptsData || []);
+      console.log('✅ Loaded', deptsWithOrgNames.length, 'departments');
+      setDepartments(deptsWithOrgNames);
     } catch (error: any) {
       console.error('Error loading data:', error);
-      toast.error('Error al cargar datos: ' + error.message);
+      toast.error('Error al cargar datos: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
@@ -115,19 +99,21 @@ export default function AdminDepartments() {
     }
 
     try {
-      const { error } = await supabase
-        .from('departments')
-        .insert([formData]);
-
-      if (error) throw error;
+      await apiClient.departments.create(formData);
       toast.success('Departamento creado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('CREATE', 'departments', undefined, {
+        name: formData.name,
+        organization_id: formData.organization_id,
+      });
       
       setIsCreateOpen(false);
       resetForm();
       loadData();
     } catch (error: any) {
       console.error('Error creating department:', error);
-      toast.error('Error al crear departamento: ' + error.message);
+      toast.error('Error al crear departamento: ' + (error.response?.data?.detail || error.message));
     }
   }
 
@@ -138,13 +124,14 @@ export default function AdminDepartments() {
     }
 
     try {
-      const { error } = await supabase
-        .from('departments')
-        .update(formData)
-        .eq('id', selectedDept.id);
-
-      if (error) throw error;
+      await apiClient.departments.update(selectedDept.id, formData);
       toast.success('Departamento actualizado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('UPDATE', 'departments', selectedDept.id, {
+        name: formData.name,
+        organization_id: formData.organization_id,
+      });
       
       setIsEditOpen(false);
       setSelectedDept(null);
@@ -152,7 +139,7 @@ export default function AdminDepartments() {
       loadData();
     } catch (error: any) {
       console.error('Error updating department:', error);
-      toast.error('Error al actualizar departamento: ' + error.message);
+      toast.error('Error al actualizar departamento: ' + (error.response?.data?.detail || error.message));
     }
   }
 
@@ -162,17 +149,16 @@ export default function AdminDepartments() {
     }
 
     try {
-      const { error } = await supabase
-        .from('departments')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await apiClient.departments.delete(id);
       toast.success('Departamento eliminado exitosamente');
+      
+      // Log audit
+      await apiClient.logAudit('DELETE', 'departments', id, { name });
+      
       loadData();
     } catch (error: any) {
       console.error('Error deleting department:', error);
-      toast.error('Error al eliminar departamento: ' + error.message);
+      toast.error('Error al eliminar departamento: ' + (error.response?.data?.detail || error.message));
     }
   }
 
@@ -307,7 +293,7 @@ export default function AdminDepartments() {
               filteredDepartments.map((dept) => (
                 <TableRow key={dept.id}>
                   <TableCell className="font-medium">{dept.name}</TableCell>
-                  <TableCell>{dept.organizations?.name || '-'}</TableCell>
+                  <TableCell>{dept.organization_name || '-'}</TableCell>
                   <TableCell>{new Date(dept.created_at).toLocaleDateString('es-ES')}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

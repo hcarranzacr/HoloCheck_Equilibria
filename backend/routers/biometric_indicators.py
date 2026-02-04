@@ -1,21 +1,24 @@
 """
 Biometric Indicators API Router
 Provides endpoints for retrieving biometric indicator information and ranges
+Uses ONLY Supabase API (centralized method) - NO SQLAlchemy
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 import logging
 
-from core.database import get_db
+from core.supabase_client import get_supabase_admin
+from dependencies.auth import get_current_user
+from schemas.auth import UserResponse
 
 router = APIRouter(prefix="/api/v1/biometric-indicators", tags=["biometric-indicators"])
 logger = logging.getLogger(__name__)
 
 
 @router.get("/ranges", response_model=Dict[str, Any])
-async def get_biometric_indicator_ranges(db: AsyncSession = Depends(get_db)):
+async def get_biometric_indicator_ranges(
+    current_user: UserResponse = Depends(get_current_user)
+):
     """
     Get all biometric indicator risk ranges for frontend evaluation
     
@@ -28,17 +31,17 @@ async def get_biometric_indicator_ranges(db: AsyncSession = Depends(get_db)):
         }
     """
     try:
-        # Query param_biometric_indicators_info table directly via PostgreSQL
-        query = text("""
-            SELECT indicator_code, risk_ranges 
-            FROM param_biometric_indicators_info
-            WHERE risk_ranges IS NOT NULL
-        """)
+        logger.info(f"📊 [Ranges] User {current_user.id} requesting biometric indicator ranges")
         
-        result = await db.execute(query)
-        rows = result.fetchall()
+        # Use centralized Supabase admin client
+        supabase = get_supabase_admin()
         
-        if not rows:
+        response = supabase.table('param_biometric_indicators_info')\
+            .select('indicator_code, risk_ranges')\
+            .not_.is_('risk_ranges', 'null')\
+            .execute()
+        
+        if not response.data:
             logger.warning("No biometric indicators found in database")
             # Return default ranges if table is empty
             return {
@@ -67,20 +70,20 @@ async def get_biometric_indicator_ranges(db: AsyncSession = Depends(get_db)):
         
         # Build response dictionary
         ranges_dict = {}
-        for row in rows:
-            indicator_code = row[0]
-            risk_ranges = row[1]
+        for item in response.data:
+            indicator_code = item.get('indicator_code')
+            risk_ranges = item.get('risk_ranges')
             
             if indicator_code and risk_ranges:
                 ranges_dict[indicator_code] = risk_ranges
         
-        logger.info(f"Retrieved risk ranges for {len(ranges_dict)} indicators")
+        logger.info(f"✅ [Ranges] Retrieved risk ranges for {len(ranges_dict)} indicators")
         return ranges_dict
         
     except Exception as e:
-        logger.error(f"Error retrieving biometric indicator ranges: {e}")
+        logger.error(f"❌ [Ranges] Error retrieving biometric indicator ranges: {e}")
         # Return default ranges on error
-        logger.warning("Returning default ranges due to error")
+        logger.warning("⚠️ [Ranges] Returning default ranges due to error")
         return {
             "heart_rate": {
                 "baja": [40, 59],
@@ -109,7 +112,7 @@ async def get_biometric_indicator_ranges(db: AsyncSession = Depends(get_db)):
 @router.get("/info/{indicator_code}")
 async def get_biometric_indicator_info(
     indicator_code: str,
-    db: AsyncSession = Depends(get_db)
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Get detailed information for a specific biometric indicator
@@ -121,27 +124,31 @@ async def get_biometric_indicator_info(
         Complete indicator information including ranges, description, tips, etc.
     """
     try:
-        query = text("""
-            SELECT * FROM param_biometric_indicators_info
-            WHERE indicator_code = :indicator_code
-        """)
+        logger.info(f"📊 [Info] User {current_user.id} requesting info for indicator: {indicator_code}")
         
-        result = await db.execute(query, {"indicator_code": indicator_code})
-        row = result.fetchone()
+        # Use centralized Supabase admin client
+        supabase = get_supabase_admin()
         
-        if not row:
+        response = supabase.table('param_biometric_indicators_info')\
+            .select('*')\
+            .eq('indicator_code', indicator_code)\
+            .execute()
+        
+        if not response.data or len(response.data) == 0:
+            logger.warning(f"⚠️ [Info] Indicator '{indicator_code}' not found")
             raise HTTPException(
                 status_code=404,
                 detail=f"Indicator '{indicator_code}' not found"
             )
         
-        # Convert row to dict
-        columns = result.keys()
-        indicator = dict(zip(columns, row))
+        indicator = response.data[0]
+        
+        logger.info(f"✅ [Info] Successfully retrieved info for indicator: {indicator_code}")
         
         return {
             "indicator_code": indicator.get('indicator_code'),
             "display_name": indicator.get('display_name'),
+            "indicator_name": indicator.get('indicator_name'),
             "unit": indicator.get('unit'),
             "min_value": indicator.get('min_value'),
             "max_value": indicator.get('max_value'),
@@ -156,7 +163,9 @@ async def get_biometric_indicator_info(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving indicator info for '{indicator_code}': {e}")
+        logger.error(f"❌ [Info] Error retrieving indicator info for '{indicator_code}': {e}")
+        import traceback
+        logger.error(f"❌ [Info] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve indicator info: {str(e)}"

@@ -1,31 +1,25 @@
 """
 Database configuration and session management
-Lazy initialization - no blocking on import
 """
 import logging
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create base class for models
-Base = declarative_base()
+# Convert postgresql:// to postgresql+asyncpg:// for async support
+database_url = settings.database_url
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Create async engine - NO BLOCKING OPERATIONS HERE
+# Create async engine
 engine = create_async_engine(
-    settings.database_url,
-    echo=False,  # Disable SQL logging for performance
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=5,
-    max_overflow=10,
-    pool_timeout=30,  # 30 second timeout
-    connect_args={
-        "timeout": 10,  # 10 second connection timeout
-        "command_timeout": 10,  # 10 second command timeout
-    }
+    database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
 )
 
 # Create async session factory
@@ -37,35 +31,21 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# Base class for models
+Base = declarative_base()
+
 logger.info("✅ Database engine created successfully")
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Dependency to get database session
-    Creates session lazily on first request
-    """
+async def get_db() -> AsyncSession:
+    """Dependency for getting async database sessions"""
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()
         except Exception as e:
-            logger.error(f"Database session error: {e}")
             await session.rollback()
+            logger.error(f"Database session error: {e}")
             raise
         finally:
             await session.close()
-
-
-async def init_db():
-    """
-    Initialize database tables
-    Called lazily, not on startup
-    """
-    try:
-        logger.info("Initializing database tables...")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("✅ Database tables initialized")
-    except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        # Don't raise - allow app to start even if DB init fails

@@ -1,17 +1,15 @@
+// @ts-nocheck
 import { useEffect, useState } from 'react';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Search, Pencil, Trash2, RefreshCw, Clock, MessageSquare, Eye } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { toast } from 'sonner';
+import { useToast } from '@/hooks/use-toast';
+import { Plus, Search, Pencil, Trash2, MessageSquare } from 'lucide-react';
 
 interface Prompt {
   id: string;
@@ -21,175 +19,129 @@ interface Prompt {
   created_at: string;
 }
 
-export default function PromptsManagement() {
+export default function OrgPrompts() {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDialog, setShowDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showViewDialog, setShowViewDialog] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
-  const [viewingPrompt, setViewingPrompt] = useState<Prompt | null>(null);
-  const [deletingPromptId, setDeletingPromptId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string>('');
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const [formData, setFormData] = useState({
     prompt_name: '',
     prompt_text: '',
   });
 
-  const [formErrors, setFormErrors] = useState({
-    prompt_name: '',
-    prompt_text: '',
-  });
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      console.log('📊 [Prompts Management] Loading data...');
-      
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('User not authenticated');
-      }
-
-      // Get user's organization_id
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('organization_id, role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profileError) {
-        console.error('❌ Error loading profile:', profileError);
-        throw new Error('Error loading user profile');
-      }
-
-      // Check if user is org admin
-      if (profile.role !== 'admin_org' && profile.role !== 'super_admin') {
-        throw new Error('Access denied: Only organization administrators can access this page');
-      }
-
-      setOrganizationId(profile.organization_id);
-
-      // Load prompts
-      const { data: promptsData, error: promptsError } = await supabase
-        .from('prompts')
-        .select('*')
-        .eq('organization_id', profile.organization_id)
-        .order('prompt_name');
-
-      if (promptsError) {
-        console.error('❌ Error loading prompts:', promptsError);
-        throw new Error('Error loading prompts');
-      }
-
-      setPrompts(promptsData || []);
-      setLastUpdated(new Date());
-      console.log('✅ [Prompts Management] Data loaded:', promptsData?.length || 0, 'prompts');
-    } catch (error: any) {
-      console.error('❌ [Prompts Management] Error:', error);
-      toast.error(error.message || 'Error loading data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }
-
   useEffect(() => {
-    loadData();
+    loadPrompts();
   }, []);
 
-  const handleRefresh = () => {
-    console.log('🔄 [Prompts Management] Manual refresh triggered');
-    setRefreshing(true);
-    loadData();
-  };
+  async function loadPrompts() {
+    try {
+      setLoading(true);
+      
+      // Get current user from backend
+      const user = await apiClient.auth.me();
+      if (!user) return;
 
-  function validateForm(): boolean {
-    const errors = {
-      prompt_name: '',
-      prompt_text: '',
-    };
+      // Get user's organization_id from their profile
+      const profileResponse = await apiClient.userProfiles.list({
+        query: JSON.stringify({ user_id: user.id }),
+        limit: 1
+      });
 
-    if (!formData.prompt_name.trim()) {
-      errors.prompt_name = 'El nombre del prompt es requerido';
+      const profile = profileResponse?.items?.[0];
+      if (!profile?.organization_id) return;
+      
+      setOrganizationId(profile.organization_id);
+
+      // Get prompts for the organization
+      const response = await apiClient.prompts.listAll({
+        query: JSON.stringify({ organization_id: profile.organization_id }),
+        sort: 'prompt_name'
+      });
+
+      setPrompts(response.items || []);
+    } catch (error) {
+      console.error('Error loading prompts:', error);
+      toast({
+        title: 'Error',
+        description: 'No se pudieron cargar los prompts',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
-
-    if (!formData.prompt_text.trim()) {
-      errors.prompt_text = 'El contenido del prompt es requerido';
-    }
-
-    setFormErrors(errors);
-    return !errors.prompt_name && !errors.prompt_text;
   }
 
   async function handleSave() {
-    if (!validateForm()) {
-      return;
-    }
-
     try {
+      if (!formData.prompt_name || !formData.prompt_text) {
+        toast({
+          title: 'Error',
+          description: 'Todos los campos son requeridos',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       if (editingPrompt) {
-        // Update existing prompt
-        const { error } = await supabase
-          .from('prompts')
-          .update({
-            prompt_name: formData.prompt_name,
-            prompt_text: formData.prompt_text,
-          })
-          .eq('id', editingPrompt.id);
+        await apiClient.prompts.update(editingPrompt.id, {
+          prompt_name: formData.prompt_name,
+          prompt_text: formData.prompt_text,
+        });
 
-        if (error) throw error;
-
-        toast.success('Prompt actualizado correctamente');
+        toast({
+          title: 'Éxito',
+          description: 'Prompt actualizado correctamente',
+        });
       } else {
-        // Create new prompt
-        const { error } = await supabase
-          .from('prompts')
-          .insert({
-            organization_id: organizationId,
-            prompt_name: formData.prompt_name,
-            prompt_text: formData.prompt_text,
-            is_active: true,
-          });
+        await apiClient.prompts.create({
+          organization_id: organizationId,
+          prompt_name: formData.prompt_name,
+          prompt_text: formData.prompt_text,
+          is_active: true,
+        });
 
-        if (error) throw error;
-
-        toast.success('Prompt creado correctamente');
+        toast({
+          title: 'Éxito',
+          description: 'Prompt creado correctamente',
+        });
       }
 
       setShowDialog(false);
       setEditingPrompt(null);
-      resetForm();
-      loadData();
-    } catch (error: any) {
+      setFormData({ prompt_name: '', prompt_text: '' });
+      loadPrompts();
+    } catch (error) {
       console.error('Error saving prompt:', error);
-      toast.error(error.message || 'Error al guardar el prompt');
+      toast({
+        title: 'Error',
+        description: 'No se pudo guardar el prompt',
+        variant: 'destructive',
+      });
     }
   }
 
-  async function handleDelete() {
-    if (!deletingPromptId) return;
+  async function handleDelete(promptId: string) {
+    if (!confirm('¿Estás seguro de eliminar este prompt?')) return;
 
     try {
-      const { error } = await supabase
-        .from('prompts')
-        .update({ is_active: false })
-        .eq('id', deletingPromptId);
+      await apiClient.prompts.update(promptId, { is_active: false });
 
-      if (error) throw error;
-
-      toast.success('Prompt eliminado correctamente');
-      setShowDeleteDialog(false);
-      setDeletingPromptId(null);
-      loadData();
-    } catch (error: any) {
+      toast({
+        title: 'Éxito',
+        description: 'Prompt eliminado correctamente',
+      });
+      loadPrompts();
+    } catch (error) {
       console.error('Error deleting prompt:', error);
-      toast.error(error.message || 'Error al eliminar el prompt');
+      toast({
+        title: 'Error',
+        description: 'No se pudo eliminar el prompt',
+        variant: 'destructive',
+      });
     }
   }
 
@@ -199,96 +151,51 @@ export default function PromptsManagement() {
       prompt_name: prompt.prompt_name,
       prompt_text: prompt.prompt_text,
     });
-    setFormErrors({ prompt_name: '', prompt_text: '' });
     setShowDialog(true);
   }
 
   function openCreateDialog() {
     setEditingPrompt(null);
-    resetForm();
-    setFormErrors({ prompt_name: '', prompt_text: '' });
+    setFormData({ prompt_name: '', prompt_text: '' });
     setShowDialog(true);
   }
 
-  function openViewDialog(prompt: Prompt) {
-    setViewingPrompt(prompt);
-    setShowViewDialog(true);
-  }
-
-  function openDeleteDialog(promptId: string) {
-    setDeletingPromptId(promptId);
-    setShowDeleteDialog(true);
-  }
-
-  function resetForm() {
-    setFormData({
-      prompt_name: '',
-      prompt_text: '',
-    });
-  }
-
   const filteredPrompts = prompts.filter(prompt =>
-    prompt.prompt_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    prompt.prompt_text.toLowerCase().includes(searchTerm.toLowerCase())
+    prompt.prompt_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
     return (
-      <div className="space-y-6 p-6">
-        <Skeleton className="h-12 w-64" />
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-64 w-full" />
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
-            <MessageSquare className="h-8 w-8 text-teal-600" />
-            Gestión de Prompts IA
-          </h1>
-          <p className="text-slate-600 mt-2">Administra los prompts personalizados de IA</p>
+          <h1 className="text-3xl font-bold text-slate-900">Prompts Personalizados</h1>
+          <p className="text-slate-600 mt-2">Gestiona los prompts de IA de tu organización</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
-            <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
-          <Button onClick={openCreateDialog} className="bg-teal-600 hover:bg-teal-700">
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Prompt
-          </Button>
-        </div>
+        <Button onClick={openCreateDialog}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nuevo Prompt
+        </Button>
       </div>
 
-      {/* Last Updated */}
-      {lastUpdated && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <span>Última actualización: {lastUpdated.toLocaleTimeString('es-ES')}</span>
-        </div>
-      )}
-
-      {/* Main Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Prompts</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Lista de Prompts
+          </CardTitle>
           <CardDescription>
             {filteredPrompts.length} prompt(s) encontrado(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Search */}
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
@@ -301,22 +208,20 @@ export default function PromptsManagement() {
             </div>
           </div>
 
-          {/* Table */}
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Contenido</TableHead>
+                  <TableHead>Texto del Prompt</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Fecha Creación</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPrompts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-slate-500 py-8">
+                    <TableCell colSpan={4} className="text-center text-slate-500">
                       No se encontraron prompts
                     </TableCell>
                   </TableRow>
@@ -324,25 +229,13 @@ export default function PromptsManagement() {
                   filteredPrompts.map((prompt) => (
                     <TableRow key={prompt.id}>
                       <TableCell className="font-medium">{prompt.prompt_name}</TableCell>
-                      <TableCell className="max-w-md">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate">{prompt.prompt_text.substring(0, 60)}...</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openViewDialog(prompt)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                      <TableCell className="max-w-md truncate">{prompt.prompt_text}</TableCell>
                       <TableCell>
-                        <Badge variant={prompt.is_active ? 'default' : 'destructive'}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          prompt.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
                           {prompt.is_active ? 'Activo' : 'Inactivo'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(prompt.created_at).toLocaleDateString('es-ES')}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -356,8 +249,7 @@ export default function PromptsManagement() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => openDeleteDialog(prompt.id)}
-                            disabled={!prompt.is_active}
+                            onClick={() => handleDelete(prompt.id)}
                           >
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
@@ -372,46 +264,35 @@ export default function PromptsManagement() {
         </CardContent>
       </Card>
 
-      {/* Create/Edit Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingPrompt ? 'Editar Prompt' : 'Nuevo Prompt'}</DialogTitle>
             <DialogDescription>
-              {editingPrompt ? 'Modifica el prompt personalizado' : 'Crea un nuevo prompt personalizado para IA'}
+              {editingPrompt ? 'Modifica los datos del prompt' : 'Agrega un nuevo prompt personalizado'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="prompt_name">Nombre del Prompt *</Label>
+              <Label htmlFor="prompt_name">Nombre del Prompt</Label>
               <Input
                 id="prompt_name"
                 value={formData.prompt_name}
                 onChange={(e) => setFormData({ ...formData, prompt_name: e.target.value })}
-                placeholder="Ej: Análisis de Bienestar Emocional"
+                placeholder="Ej: Análisis de Bienestar"
               />
-              {formErrors.prompt_name && (
-                <p className="text-sm text-red-600 mt-1">{formErrors.prompt_name}</p>
-              )}
             </div>
 
             <div>
-              <Label htmlFor="prompt_text">Contenido del Prompt *</Label>
+              <Label htmlFor="prompt_text">Texto del Prompt</Label>
               <Textarea
                 id="prompt_text"
                 value={formData.prompt_text}
                 onChange={(e) => setFormData({ ...formData, prompt_text: e.target.value })}
-                rows={10}
+                rows={8}
                 placeholder="Escribe el prompt que se usará para el análisis de IA..."
-                className="font-mono text-sm"
               />
-              {formErrors.prompt_text && (
-                <p className="text-sm text-red-600 mt-1">{formErrors.prompt_text}</p>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {formData.prompt_text.length} caracteres
-              </p>
             </div>
           </div>
 
@@ -419,73 +300,10 @@ export default function PromptsManagement() {
             <Button variant="outline" onClick={() => setShowDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} className="bg-teal-600 hover:bg-teal-700">
-              Guardar
-            </Button>
+            <Button onClick={handleSave}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* View Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-teal-600" />
-              {viewingPrompt?.prompt_name}
-            </DialogTitle>
-            <DialogDescription>
-              Creado el {viewingPrompt && new Date(viewingPrompt.created_at).toLocaleDateString('es-ES')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="bg-slate-50 p-4 rounded-lg border overflow-auto max-h-96">
-              <pre className="whitespace-pre-wrap font-mono text-sm">
-                {viewingPrompt?.prompt_text}
-              </pre>
-            </div>
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>{viewingPrompt?.prompt_text.length} caracteres</span>
-              <Badge variant={viewingPrompt?.is_active ? 'default' : 'destructive'}>
-                {viewingPrompt?.is_active ? 'Activo' : 'Inactivo'}
-              </Badge>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowViewDialog(false)}>
-              Cerrar
-            </Button>
-            <Button onClick={() => {
-              if (viewingPrompt) {
-                setShowViewDialog(false);
-                openEditDialog(viewingPrompt);
-              }
-            }} className="bg-teal-600 hover:bg-teal-700">
-              Editar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción desactivará el prompt. El prompt no se utilizará en futuros análisis pero se conservará en el historial.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              Desactivar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

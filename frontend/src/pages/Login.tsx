@@ -1,111 +1,131 @@
-import { useEffect, useState } from 'react';
-import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import HealthStatusIndicator from '@/components/health-status/HealthStatusIndicator';
 
 export default function Login() {
-  const { logActivity } = useActivityLogger();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    logActivity('page_view', { page: 'Login' });
-  }, []);
+    // Check if user is already logged in
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        console.log('✅ [Login] User already logged in, redirecting to lobby');
+        navigate('/lobby');
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
-  async function handleLogin(e: React.FormEvent) {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setError('');
+    setLoading(true);
+
     try {
-      setLoading(true);
+      console.log('🔐 [Login] Attempting login for:', email);
       
-      console.log('🔐 [Login] Attempting login with Supabase...');
-      
-      // Use Supabase Auth directly
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) {
-        console.error('❌ [Login] Supabase error:', error);
-        throw new Error(error.message);
+      if (signInError) {
+        console.error('❌ [Login] Sign in error:', signInError);
+        setError(signInError.message);
+        return;
       }
 
-      if (!data.session) {
-        throw new Error('No se pudo crear la sesión');
+      if (data.session) {
+        console.log('✅ [Login] Login successful, redirecting to lobby');
+        navigate('/lobby');
       }
-
-      console.log('✅ [Login] Login successful:', {
-        userId: data.user?.id,
-        email: data.user?.email,
-        hasSession: !!data.session
-      });
-
-      // Store the token
-      localStorage.setItem('sb-token', data.session.access_token);
-      
-      await logActivity('login', { email });
-      toast.success('Inicio de sesión exitoso');
-      navigate('/');
-    } catch (error: any) {
-      console.error('❌ [Login] Login error:', error);
-      toast.error(error.message || 'Error al iniciar sesión');
-      await logActivity('login_error', { email, error: error.message }, 'error');
+    } catch (err) {
+      console.error('❌ [Login] Unexpected error:', err);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 to-blue-100 p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">HoloCheck Equilibria</CardTitle>
-          <p className="text-center text-slate-600">Inicia sesión en tu cuenta</p>
+    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">
+            HoloCheck Equilibria
+          </CardTitle>
+          <CardDescription className="text-center">
+            Ingresa tus credenciales para acceder
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Correo Electrónico</Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="tu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="tu@email.com"
+                disabled={loading}
+                autoComplete="email"
               />
             </div>
-            
-            <div>
+
+            <div className="space-y-2">
               <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="••••••••"
+                disabled={loading}
+                autoComplete="current-password"
               />
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700"
+            <Button
+              type="submit"
+              className="w-full"
               disabled={loading}
             >
-              {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Iniciando sesión...
+                </>
+              ) : (
+                'Iniciar Sesión'
+              )}
             </Button>
           </form>
         </CardContent>
       </Card>
+
+      {/* Health Status Indicator */}
+      <HealthStatusIndicator />
     </div>
   );
 }

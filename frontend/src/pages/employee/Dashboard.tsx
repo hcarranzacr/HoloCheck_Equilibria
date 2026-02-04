@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, TrendingUp, Calendar, Heart, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
 import BiometricGauge from '@/components/dashboard/BiometricGauge';
 import SectionHeader from '@/components/dashboard/SectionHeader';
@@ -29,9 +30,23 @@ interface DashboardData {
   };
 }
 
+interface EvolutionData {
+  month: string;
+  month_start: string;
+  wellness_index_score: number;
+  ai_stress: number;
+  ai_fatigue: number;
+  ai_recovery: number;
+  ai_cognitive_load: number;
+  mental_score: number;
+  scan_count: number;
+}
+
 export default function EmployeeDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [evolutionData, setEvolutionData] = useState<EvolutionData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingEvolution, setLoadingEvolution] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [ranges, setRanges] = useState<Record<string, Record<string, [number, number]>>>({});
@@ -115,14 +130,64 @@ export default function EmployeeDashboard() {
     }
   }
 
+  async function loadEvolutionData() {
+    try {
+      console.log('📈 [Employee Dashboard] Loading evolution data (6 months)...');
+      setLoadingEvolution(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('❌ [Employee Dashboard] No user found');
+        return;
+      }
+
+      console.log('📊 [Employee Dashboard] Fetching from: /api/v1/dashboards/employee/evolution?months=6');
+      console.log('📊 [Employee Dashboard] Using user_id as Bearer token:', user.id);
+      
+      // Use user_id as Bearer token (NOT JWT)
+      const response = await fetch('/api/v1/dashboards/employee/evolution?months=6', {
+        headers: {
+          'Authorization': `Bearer ${user.id}`
+        }
+      });
+
+      console.log('📊 [Employee Dashboard] Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Employee Dashboard] API error:', errorText);
+        throw new Error(`Failed to fetch evolution data: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('📊 [Employee Dashboard] API Response:', result);
+      console.log('📊 [Employee Dashboard] Data array length:', result.data?.length || 0);
+      
+      if (result.data && result.data.length > 0) {
+        console.log('📊 [Employee Dashboard] Sample data point:', result.data[0]);
+      } else {
+        console.warn('⚠️ [Employee Dashboard] No evolution data returned from API');
+      }
+
+      setEvolutionData(result.data || []);
+      console.log('✅ [Employee Dashboard] Evolution data loaded:', result.data?.length || 0, 'points');
+    } catch (error) {
+      console.error('❌ [Employee Dashboard] Error loading evolution data:', error);
+    } finally {
+      setLoadingEvolution(false);
+    }
+  }
+
   useEffect(() => {
     loadDashboardData();
+    loadEvolutionData();
   }, []);
 
   const handleRefresh = () => {
     console.log('🔄 [Employee Dashboard] Manual refresh triggered');
     setRefreshing(true);
     loadDashboardData();
+    loadEvolutionData();
   };
 
   if (loading) {
@@ -223,6 +288,79 @@ export default function EmployeeDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Evolution Chart */}
+        <Card className="bg-white rounded-xl shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-blue-600" />
+              Mi Evolución Personal (Últimos 6 meses)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingEvolution ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : evolutionData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={evolutionData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip 
+                    formatter={(value: number) => value.toFixed(1)}
+                  />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="wellness_index_score" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    name="Índice de Bienestar"
+                    dot={{ fill: '#3b82f6' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="ai_stress" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    name="Estrés"
+                    dot={{ fill: '#ef4444' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="ai_fatigue" 
+                    stroke="#f97316" 
+                    strokeWidth={2}
+                    name="Fatiga"
+                    dot={{ fill: '#f97316' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="ai_recovery" 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    name="Recuperación"
+                    dot={{ fill: '#22c55e' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <Activity className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p className="font-medium">No hay suficientes datos para mostrar la evolución</p>
+                <p className="text-sm mt-2">Realiza más escaneos durante varios meses para ver tu progreso</p>
+                <p className="text-xs mt-2 text-gray-400">
+                  Datos disponibles: {data.total_scans} escaneos
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="bg-white rounded-xl shadow-md">

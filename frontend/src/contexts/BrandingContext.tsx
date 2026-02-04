@@ -1,122 +1,113 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { OrganizationBranding, BrandingContextType } from '@/types/branding';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { OrganizationBranding, UserProfile, BrandingContextType } from '@/types/branding';
+import { apiClient } from '@/lib/api-client';
 
 const BrandingContext = createContext<BrandingContextType | undefined>(undefined);
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<OrganizationBranding | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const loadBrandingByOrgId = useCallback(async (organizationId: string) => {
-    if (!organizationId) {
-      console.warn('⚠️ [BrandingContext] No organization_id provided');
-      return;
-    }
-
+  const loadBranding = async () => {
     try {
       setLoading(true);
-      setError(null);
-      
-      console.log(`🎨 [BrandingContext] Loading branding for organization: ${organizationId}`);
-      
-      // Call backend API to get branding by organization_id
-      const response = await fetch(
-        `/api/v1/organization-branding/by-organization/${organizationId}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
 
-      if (!response.ok) {
-        throw new Error(`Failed to load branding: ${response.statusText}`);
+      // Get current user
+      const user = await apiClient.getCurrentUser();
+      if (!user) {
+        console.log('No authenticated user');
+        setLoading(false);
+        return;
       }
 
-      const data: OrganizationBranding = await response.json();
-      
-      console.log('✅ [BrandingContext] Branding loaded:', {
-        slug: data.slug,
-        primaryColor: data.primary_color,
-        logo: data.logo_url,
+      // Get user profile via apiClient
+      const profileResponse = await apiClient.userProfiles.query({
+        query: { user_id: user.id },
+        limit: 1,
       });
 
-      setBranding(data);
-      
-      // Apply branding to document
-      applyBrandingToDocument(data);
-      
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load branding';
-      console.error('❌ [BrandingContext] Error loading branding:', err);
-      setError(errorMessage);
-      
-      // Set default branding on error
-      setBranding(null);
+      const profile = profileResponse.items?.[0];
+      if (!profile) {
+        console.log('No user profile found');
+        setLoading(false);
+        return;
+      }
+
+      setUserProfile(profile as any);
+
+      // Get organization branding via apiClient
+      if (profile.organization_id) {
+        try {
+          const brandingResponse = await apiClient.call(
+            `/api/v1/organization-branding?organization_id=${profile.organization_id}`,
+            'GET'
+          );
+
+          const brandingData = brandingResponse.items?.[0] || brandingResponse[0];
+          
+          if (brandingData) {
+            // Get organization name
+            const org = await apiClient.organizations.get(profile.organization_id);
+            
+            setBranding({
+              ...brandingData,
+              organization_name: org?.name || 'Organization',
+            });
+
+            // Apply branding
+            applyBranding(brandingData);
+          }
+        } catch (error) {
+          console.error('Error loading branding:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading branding context:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  const clearBranding = useCallback(() => {
-    console.log('🧹 [BrandingContext] Clearing branding');
-    setBranding(null);
-    setError(null);
-    
-    // Reset document to defaults
-    document.documentElement.style.removeProperty('--primary-color');
-    document.documentElement.style.removeProperty('--secondary-color');
-    document.title = 'HoloCheck Equilibria';
-    
-    // Reset favicon to default
-    const favicon = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
-    if (favicon) {
-      favicon.href = '/favicon.ico';
-    }
-  }, []);
+  const applyBranding = (brandingData: OrganizationBranding) => {
+    const root = document.documentElement;
 
-  const applyBrandingToDocument = (brandingData: OrganizationBranding) => {
-    // Apply CSS variables for colors
     if (brandingData.primary_color) {
-      document.documentElement.style.setProperty('--primary-color', brandingData.primary_color);
+      root.style.setProperty('--primary-color', brandingData.primary_color);
     }
+
     if (brandingData.secondary_color) {
-      document.documentElement.style.setProperty('--secondary-color', brandingData.secondary_color);
+      root.style.setProperty('--secondary-color', brandingData.secondary_color);
     }
 
-    // Update document title
-    if (brandingData.organization_name) {
-      document.title = `${brandingData.organization_name} - HoloCheck Equilibria`;
-    }
-
-    // Update favicon
-    if (brandingData.favicon_url) {
-      let favicon = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
-      if (!favicon) {
-        favicon = document.createElement('link');
-        favicon.rel = 'icon';
-        document.head.appendChild(favicon);
-      }
-      favicon.href = brandingData.favicon_url;
-    }
-
-    // Apply font family if specified
     if (brandingData.font_family) {
-      document.documentElement.style.setProperty('--font-family', brandingData.font_family);
+      root.style.setProperty('--font-family', brandingData.font_family);
+    }
+
+    if (brandingData.custom_css) {
+      const styleId = 'custom-branding-styles';
+      let styleElement = document.getElementById(styleId);
+      
+      if (!styleElement) {
+        styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        document.head.appendChild(styleElement);
+      }
+      
+      styleElement.textContent = brandingData.custom_css;
     }
   };
 
+  useEffect(() => {
+    loadBranding();
+  }, []);
+
+  const refreshBranding = async () => {
+    await loadBranding();
+  };
+
   return (
-    <BrandingContext.Provider
-      value={{
-        branding,
-        loading,
-        error,
-        loadBrandingByOrgId,
-        clearBranding,
-      }}
-    >
+    <BrandingContext.Provider value={{ branding, userProfile, loading, refreshBranding }}>
       {children}
     </BrandingContext.Provider>
   );
@@ -124,8 +115,8 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
 
 export function useBranding() {
   const context = useContext(BrandingContext);
-  if (!context) {
-    throw new Error('useBranding must be used within BrandingProvider');
+  if (context === undefined) {
+    throw new Error('useBranding must be used within a BrandingProvider');
   }
   return context;
 }

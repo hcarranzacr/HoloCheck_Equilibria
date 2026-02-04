@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import BiometricGaugeWithInfo from '@/components/dashboard/BiometricGaugeWithInfo';
 import { 
   Users, 
@@ -93,13 +94,28 @@ interface LatestScan {
   created_at: string;
 }
 
+interface TeamEvolutionData {
+  analysis_period: string;
+  month_start: string;
+  wellness_index: number;
+  avg_stress: number;
+  avg_fatigue: number;
+  avg_recovery: number;
+  avg_cognitive_load: number;
+  burnout_risk_score: number;
+  employees_scanned: number;
+  total_scans: number;
+}
+
 export default function LeaderDashboard() {
   const [insights, setInsights] = useState<DepartmentInsight | null>(null);
   const [metrics, setMetrics] = useState<DepartmentMetrics | null>(null);
   const [employeesAtRisk, setEmployeesAtRisk] = useState<EmployeeAtRisk[]>([]);
   const [loyaltyPrograms, setLoyaltyPrograms] = useState<LoyaltyProgram[]>([]);
   const [latestScans, setLatestScans] = useState<LatestScan[]>([]);
+  const [evolutionData, setEvolutionData] = useState<TeamEvolutionData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingEvolution, setLoadingEvolution] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -232,14 +248,44 @@ export default function LeaderDashboard() {
     }
   };
 
+  const loadEvolutionData = async () => {
+    try {
+      console.log('📈 [Leader Dashboard] Loading team evolution data...');
+      setLoadingEvolution(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/v1/dashboards/leader/team-evolution?months=6', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch team evolution data');
+      }
+
+      const result = await response.json();
+      setEvolutionData(result.data || []);
+      console.log('✅ [Leader Dashboard] Evolution data loaded:', result.data?.length || 0, 'points');
+    } catch (error) {
+      console.error('Error loading team evolution data:', error);
+    } finally {
+      setLoadingEvolution(false);
+    }
+  };
+
   useEffect(() => {
     loadDashboardData();
+    loadEvolutionData();
   }, []);
 
   const handleRefresh = () => {
     console.log('🔄 [Leader Dashboard] Manual refresh triggered');
     setRefreshing(true);
     loadDashboardData();
+    loadEvolutionData();
   };
 
   const getFlagColor = (flag: string) => {
@@ -362,6 +408,67 @@ export default function LeaderDashboard() {
         </div>
       </div>
 
+      {/* Team Evolution Chart */}
+      <Card className="bg-white rounded-xl shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-purple-600" />
+            Evolución del Equipo (Últimos 6 meses)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingEvolution ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+            </div>
+          ) : evolutionData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={evolutionData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="analysis_period" 
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis domain={[0, 100]} />
+                <Tooltip 
+                  formatter={(value: number) => value.toFixed(1)}
+                />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="wellness_index" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  name="Índice de Bienestar"
+                  dot={{ fill: '#3b82f6' }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="avg_stress" 
+                  stroke="#ef4444" 
+                  strokeWidth={2}
+                  name="Estrés Promedio"
+                  dot={{ fill: '#ef4444' }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="burnout_risk_score" 
+                  stroke="#f59e0b" 
+                  strokeWidth={2}
+                  name="Riesgo de Burnout"
+                  dot={{ fill: '#f59e0b' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <Activity className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p>No hay suficientes datos para mostrar la evolución</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Biometric Gauges Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <BiometricGaugeWithInfo
@@ -373,35 +480,35 @@ export default function LeaderDashboard() {
         
         <BiometricGaugeWithInfo
           title="Nivel de Estrés"
-          value={parseFloat(insights?.avg_stress || metrics?.avg_stress || '0')}
+          value={parseFloat(String(insights?.avg_stress || metrics?.avg_stress || '0'))}
           indicatorCode="ai_stress"
           icon={<Brain className="h-5 w-5" />}
         />
 
         <BiometricGaugeWithInfo
           title="Índice de Fatiga"
-          value={parseFloat(insights?.avg_fatigue || metrics?.avg_fatigue || '0')}
+          value={parseFloat(String(insights?.avg_fatigue || metrics?.avg_fatigue || '0'))}
           indicatorCode="ai_fatigue"
           icon={<Battery className="h-5 w-5" />}
         />
 
         <BiometricGaugeWithInfo
           title="Carga Cognitiva"
-          value={parseFloat(insights?.avg_cognitive_load || metrics?.avg_cognitive_load || '0')}
+          value={parseFloat(String(insights?.avg_cognitive_load || metrics?.avg_cognitive_load || '0'))}
           indicatorCode="ai_cognitive_load"
           icon={<Target className="h-5 w-5" />}
         />
 
         <BiometricGaugeWithInfo
           title="Capacidad de Recuperación"
-          value={parseFloat(insights?.avg_recovery || metrics?.avg_recovery || '0')}
+          value={parseFloat(String(insights?.avg_recovery || metrics?.avg_recovery || '0'))}
           indicatorCode="ai_recovery"
           icon={<Zap className="h-5 w-5" />}
         />
 
         <BiometricGaugeWithInfo
           title="Riesgo de Burnout"
-          value={parseFloat(insights?.burnout_risk_score || '0') * 10}
+          value={parseFloat(String(insights?.burnout_risk_score || '0')) * 10}
           indicatorCode="mental_stress_index"
           icon={<Shield className="h-5 w-5" />}
         />

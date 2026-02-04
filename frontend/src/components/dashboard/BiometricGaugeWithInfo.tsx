@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Info, Star } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -33,26 +33,36 @@ interface BenefitLink {
   indicator_code: string;
   relevance_level: string;
   notes: string;
+  indicator_codes?: string[];
+  all_notes?: string[];
   partner_benefits: {
     title: string;
     benefit_description: string;
+    how_to_use: string;
+    link_url: string;
+    image_url: string;
+    tags: string[];
   };
 }
 
 interface BiometricGaugeWithInfoProps {
   value: number;
   indicatorCode: string;
+  title?: string;
   label?: string;
   className?: string;
   riskRanges?: Record<string, [number, number]> | null;
+  icon?: React.ReactElement;
 }
 
 export default function BiometricGaugeWithInfo({
   value,
   indicatorCode,
+  title,
   label,
   className,
   riskRanges,
+  icon,
 }: BiometricGaugeWithInfoProps) {
   const [indicatorInfo, setIndicatorInfo] = useState<IndicatorInfo | null>(null);
   const [benefitLinks, setBenefitLinks] = useState<BenefitLink[]>([]);
@@ -75,59 +85,72 @@ export default function BiometricGaugeWithInfo({
       const code = getIndicatorCode(indicatorCode);
       console.log('🔍 [BiometricGaugeWithInfo] Mapped code:', code);
       
-      // Load indicator info
-      const { data: infoData, error: fetchError } = await supabase
-        .from('param_biometric_indicators_info')
-        .select('*')
-        .eq('indicator_code', code)
-        .single();
-
-      if (fetchError) {
-        console.error('❌ [BiometricGaugeWithInfo] Error loading indicator info:', fetchError);
-        setError(fetchError.message);
+      // Load indicator info via apiClient
+      const infoData = await apiClient.getBiometricIndicatorInfo(code);
+      
+      if (!infoData) {
+        console.error('❌ [BiometricGaugeWithInfo] Error loading indicator info');
+        setError('Failed to load indicator info');
         return;
       }
 
       console.log('✅ [BiometricGaugeWithInfo] Indicator data loaded:', infoData);
-      setIndicatorInfo(infoData);
+      setIndicatorInfo(infoData as any);
 
-      // Load benefit links for this indicator
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.error('User not authenticated:', userError);
+      // Load benefit links for this indicator via apiClient
+      const user = await apiClient.getCurrentUser();
+      if (!user) {
+        console.error('User not authenticated');
         return;
       }
 
-      // Get user's organization
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
+      // Get user's organization via apiClient
+      const profileResponse = await apiClient.userProfiles.query({
+        query: { user_id: user.id },
+        limit: 1,
+      });
 
-      if (profileError || !profile?.organization_id) {
-        console.error('Error loading profile:', profileError);
+      const profile = profileResponse.items?.[0];
+      if (!profile?.organization_id) {
+        console.error('Error loading profile');
         return;
       }
 
-      // Load benefit links
-      const { data: benefitsData, error: benefitsError } = await supabase
-        .from('organization_benefit_indicator_links')
-        .select(`
-          *,
-          partner_benefits:benefit_id (
-            title,
-            benefit_description
-          )
-        `)
-        .eq('organization_id', profile.organization_id)
-        .eq('indicator_code', code);
-
-      if (benefitsError) {
+      // Load benefit links via apiClient
+      try {
+        const benefitsResponse = await apiClient.call(
+          `/api/v1/organization-benefit-indicator-links?organization_id=${profile.organization_id}&indicator_code=${code}`,
+          'GET'
+        );
+        
+        console.log('✅ [BiometricGaugeWithInfo] Raw benefits loaded:', benefitsResponse);
+        
+        // Deduplicate by benefit_id
+        const uniqueBenefitsMap = new Map<string, BenefitLink>();
+        benefitsResponse?.forEach((item: any) => {
+          if (!uniqueBenefitsMap.has(item.benefit_id)) {
+            uniqueBenefitsMap.set(item.benefit_id, {
+              ...item,
+              indicator_codes: [item.indicator_code],
+              all_notes: item.notes ? [item.notes] : []
+            });
+          } else {
+            // Add additional indicator codes and notes
+            const existing = uniqueBenefitsMap.get(item.benefit_id)!;
+            if (!existing.indicator_codes?.includes(item.indicator_code)) {
+              existing.indicator_codes?.push(item.indicator_code);
+            }
+            if (item.notes && !existing.all_notes?.includes(item.notes)) {
+              existing.all_notes?.push(item.notes);
+            }
+          }
+        });
+        
+        const uniqueBenefits = Array.from(uniqueBenefitsMap.values());
+        console.log('✅ [BiometricGaugeWithInfo] Deduplicated benefits:', uniqueBenefits.length, 'unique benefits');
+        setBenefitLinks(uniqueBenefits);
+      } catch (benefitsError) {
         console.error('Error loading benefits:', benefitsError);
-      } else {
-        console.log('✅ [BiometricGaugeWithInfo] Benefits loaded:', benefitsData);
-        setBenefitLinks(benefitsData || []);
       }
     } catch (err: any) {
       console.error('❌ [BiometricGaugeWithInfo] Exception:', err);
@@ -153,7 +176,7 @@ export default function BiometricGaugeWithInfo({
     return (
       <BiometricGauge
         value={safeValue}
-        label={label || indicatorCode}
+        label={label || title || indicatorCode}
         unit=""
         min={0}
         max={100}
@@ -172,7 +195,7 @@ export default function BiometricGaugeWithInfo({
     <div className="relative">
       <BiometricGauge
         value={safeValue}
-        label={label || indicatorInfo.display_name}
+        label={label || title || indicatorInfo.display_name}
         unit={indicatorInfo.unit || ''}
         min={indicatorInfo.min_value}
         max={indicatorInfo.max_value}
@@ -209,54 +232,124 @@ export default function BiometricGaugeWithInfo({
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold flex items-center gap-2">
               <Star className="h-6 w-6 text-amber-500 fill-amber-500" />
-              Beneficios Asociados
+              Beneficios Recomendados
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 mt-4">
             <p className="text-sm text-gray-600">
-              Los siguientes beneficios están relacionados con el indicador <strong>{indicatorInfo.display_name}</strong>:
+              Basado en tu indicador <strong>{indicatorInfo.display_name}</strong>, te recomendamos los siguientes beneficios:
             </p>
 
             {benefitLinks.map((link) => (
               <div
-                key={link.id}
-                className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                key={link.benefit_id}
+                className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
               >
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-lg">
-                    {link.partner_benefits?.title || 'Beneficio'}
-                  </h3>
-                  <Badge
-                    variant={
-                      link.relevance_level === 'alto'
-                        ? 'destructive'
-                        : link.relevance_level === 'moderado'
-                        ? 'default'
-                        : 'secondary'
-                    }
-                  >
-                    {link.relevance_level}
-                  </Badge>
-                </div>
-
-                <p className="text-sm text-gray-700 mb-3">
-                  {link.partner_benefits?.benefit_description || 'Sin descripción disponible'}
-                </p>
-
-                {link.notes && (
-                  <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-900">
-                    <strong>Nota:</strong> {link.notes}
+                {/* Benefit Image */}
+                {link.partner_benefits?.image_url && (
+                  <div className="w-full h-48 bg-gray-100">
+                    <img
+                      src={link.partner_benefits.image_url}
+                      alt={link.partner_benefits.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   </div>
                 )}
+
+                <div className="p-4">
+                  {/* Title and Relevance Badge */}
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="font-semibold text-lg">
+                      {link.partner_benefits?.title || 'Beneficio'}
+                    </h3>
+                    <Badge
+                      variant={
+                        link.relevance_level === 'alto'
+                          ? 'destructive'
+                          : link.relevance_level === 'moderado'
+                          ? 'default'
+                          : 'secondary'
+                      }
+                    >
+                      {link.relevance_level}
+                    </Badge>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-sm text-gray-700 mb-3">
+                    {link.partner_benefits?.benefit_description || 'Sin descripción disponible'}
+                  </p>
+
+                  {/* How to Use */}
+                  {link.partner_benefits?.how_to_use && (
+                    <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 text-sm">
+                      <strong className="text-blue-900">Cómo usar:</strong>
+                      <p className="text-blue-800 mt-1">{link.partner_benefits.how_to_use}</p>
+                    </div>
+                  )}
+
+                  {/* Notes - show all notes if multiple indicators */}
+                  {link.all_notes && link.all_notes.length > 0 && link.all_notes.some(n => n) && (
+                    <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-3 text-sm">
+                      <strong className="text-amber-900">Notas:</strong>
+                      {link.all_notes.filter(n => n).map((note, idx) => (
+                        <p key={idx} className="text-amber-800 mt-1">• {note}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Show which indicators trigger this benefit */}
+                  {link.indicator_codes && link.indicator_codes.length > 1 && (
+                    <div className="bg-purple-50 border border-purple-200 rounded p-3 mb-3 text-sm">
+                      <strong className="text-purple-900">También recomendado para:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {link.indicator_codes.map((code, idx) => (
+                          <span key={idx} className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
+                            {code}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tags */}
+                  {link.partner_benefits?.tags && link.partner_benefits.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {link.partner_benefits.tags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Link Button */}
+                  {link.partner_benefits?.link_url && (
+                    <a
+                      href={link.partner_benefits.link_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      Acceder al beneficio →
+                    </a>
+                  )}
+                </div>
               </div>
             ))}
 
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm">
               <p className="flex items-center gap-2">
                 <span className="text-lg">💡</span>
-                <span className="text-amber-900">
-                  Puedes ver el beneficio detallado haciendo clic en la <strong>estrella de beneficios</strong> en el dashboard principal.
+                <span className="text-green-900">
+                  Estos beneficios están personalizados según tus indicadores de salud. Aprovecha estas oportunidades para mejorar tu bienestar.
                 </span>
               </p>
             </div>

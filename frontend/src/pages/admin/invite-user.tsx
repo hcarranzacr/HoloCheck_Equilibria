@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,25 +50,15 @@ export default function InviteUser() {
 
   const loadData = async () => {
     try {
-      // Load organizations
-      const { data: orgsData, error: orgsError } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .order('name');
+      // Load organizations via apiClient
+      const orgsResponse = await apiClient.organizations.list({ limit: 100, sort: 'name' });
+      setOrganizations(orgsResponse.items || []);
 
-      if (orgsError) throw orgsError;
-      setOrganizations(orgsData || []);
-
-      // Load departments
-      const { data: deptsData, error: deptsError } = await supabase
-        .from('departments')
-        .select('id, name, organization_id')
-        .order('name');
-
-      if (deptsError) throw deptsError;
-      setDepartments(deptsData || []);
+      // Load departments via apiClient
+      const deptsResponse = await apiClient.departments.listAll({ limit: 1000, sort: 'name' });
+      setDepartments(deptsResponse.items || []);
     } catch (error: any) {
-      toast.error(error.message || 'Error loading data');
+      toast.error(error.response?.data?.detail || error.message || 'Error loading data');
     }
   };
 
@@ -77,27 +67,26 @@ export default function InviteUser() {
     setLoading(true);
 
     try {
-      // Create user profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .insert([
-          {
-            email: formData.email,
-            full_name: formData.full_name,
-            role: formData.role,
-            organization_id: formData.organization_id,
-            department_id: formData.department_id || null,
-          },
-        ])
-        .select()
-        .single();
-
-      if (profileError) throw profileError;
+      // Create user profile via apiClient
+      await apiClient.userProfiles.create({
+        email: formData.email,
+        full_name: formData.full_name,
+        role: formData.role,
+        organization_id: formData.organization_id,
+        department_id: formData.department_id || null,
+      });
 
       toast.success('User invited successfully');
+      
+      // Log audit
+      await apiClient.logAudit('CREATE', 'user_profiles', undefined, {
+        email: formData.email,
+        full_name: formData.full_name,
+      });
+      
       navigate('/admin/users');
     } catch (error: any) {
-      toast.error(error.message || 'Error inviting user');
+      toast.error(error.response?.data?.detail || error.message || 'Error inviting user');
     } finally {
       setLoading(false);
     }
