@@ -1,0 +1,36 @@
+VERSION: v2026.02.08-recovery-point-alpha
+TAG: recovery-point-2026-02-08-pre-regression
+DATE: 2026-02-08 10:56:36 UTC
+BRANCH: main
+COMMIT: Pre-regression recovery point
+
+SYSTEM STATE:
+- Backend: FastAPI + Supabase + SQLAlchemy (AsyncPG)
+- Frontend: React + Vite + Shadcn-UI + i18next
+- Database: PostgreSQL (Supabase hosted)
+- Authentication: Supabase Auth
+- i18n: Multi-language support (es, es-CR, en)
+
+KNOWN ISSUES:
+1. Supabase client version compatibility (supabase==2.3.4 vs httpx==0.25.2)
+2. Database connection error: "Tenant or user not found" on i18n endpoints
+3. Proxy argument incompatibility in Supabase client initialization
+4. Missing translations for lobby.* keys in i18n_translations table
+
+CRITICAL DEPENDENCIES:
+- supabase==2.3.4
+- httpx==0.25.2
+- fastapi==0.115.5
+- sqlalchemy==2.0.36
+- asyncpg==0.30.0
+- react==18.3.1
+- i18next==23.17.4
+
+RECOVERY INSTRUCTIONS:
+1. Clone repository: git clone https://github.com/hcarranzacr/HoloCheck_Equilibria.git
+2. Checkout this tag: git checkout recovery-point-2026-02-08-pre-regression
+3. Setup backend: cd backend && pip install -r requirements.txt
+4. Setup frontend: cd frontend && pnpm install
+5. Configure .env file with Supabase credentials
+6. Start backend: cd backend && python3 -m uvicorn main:app --reload
+7. Start frontend: cd frontend && pnpm run dev

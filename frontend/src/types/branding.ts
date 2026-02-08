@@ -3,6 +3,7 @@ export interface OrganizationBranding {
   organization_id: string;
   organization_name?: string;
   logo_url?: string;
+  background_image_url?: string;
   primary_color?: string;
   secondary_color?: string;
   font_family?: string;
@@ -10,7 +11,6 @@ export interface OrganizationBranding {
   slug?: string;
   banner_url?: string;
   favicon_url?: string;
-  background_image_url?: string;
   accent_color?: string;
   company_tagline?: string;
   welcome_message?: string;
@@ -36,28 +36,48 @@ export interface OrganizationBranding {
   theme_mode?: 'light' | 'dark' | 'auto';
   created_at?: string;
   updated_at?: string;
+  
+  // New fields from branding table
+  login_message?: string;
+  dashboard_welcome_text?: string;
+  meta_description?: string;
+  custom_terms_url?: string;
+  custom_privacy_url?: string;
+  login_layout_style?: string;
+  branding_mode?: string;
+  preferred_locale?: string;
+  fallback_locale?: string;
+  date_format?: string;
+  time_format?: string;
+  number_locale?: string;
+  currency_code?: string;
+  first_day_of_week?: number;
 }
 
 export interface UserProfile {
+  id: string;
   user_id: string;
-  email: string;
-  full_name: string;
-  role: string;
   organization_id: string;
+  role: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  full_name?: string;
   department_id?: string;
   organization_name?: string;
   department_name?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface BrandingContextType {
   branding: OrganizationBranding | null;
-  userProfile?: UserProfile | null;
+  userProfile: UserProfile | null;
   loading: boolean;
   error?: string | null;
-  loadBrandingByOrgId?: (organizationId: string) => Promise<void>;
-  clearBranding?: () => void;
-  refreshBranding?: () => Promise<void>;
+  refreshBranding: () => Promise<void>;
+  loadBrandingByOrgId: (organizationId: string) => Promise<void>;
+  clearBranding: () => void;
 }
 
 export const ROLE_ROUTES: Record<string, string> = {

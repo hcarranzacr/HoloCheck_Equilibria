@@ -3,6 +3,7 @@ import { useHealthCheck } from '@/hooks/useHealthCheck';
 import { useTranslation } from 'react-i18next';
 import HealthStatusButton from './HealthStatusButton';
 import HealthStatusPopup from './HealthStatusPopup';
+import { logger } from '@/lib/logger';
 
 export default function HealthStatusIndicator() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -12,10 +13,28 @@ export default function HealthStatusIndicator() {
   });
   const { t } = useTranslation();
 
+  useEffect(() => {
+    logger.componentMount('HealthStatusIndicator');
+    return () => logger.componentUnmount('HealthStatusIndicator');
+  }, []);
+
+  useEffect(() => {
+    if (health) {
+      logger.componentUpdate('HealthStatusIndicator', 'Health status updated', {
+        overall: health.overall,
+        services: Object.entries(health.services).map(([name, service]) => ({
+          name,
+          status: service.status,
+        })),
+      });
+    }
+  }, [health]);
+
   // Close popup on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isExpanded) {
+        logger.debug('HealthStatusIndicator', 'Closing popup (Escape key)');
         setIsExpanded(false);
       }
     };
@@ -25,6 +44,7 @@ export default function HealthStatusIndicator() {
   }, [isExpanded]);
 
   if (!health && loading) {
+    logger.debug('HealthStatusIndicator', 'Initial load, not rendering yet');
     return null; // Don't show until first check completes
   }
 
@@ -43,12 +63,23 @@ export default function HealthStatusIndicator() {
     }
   };
 
+  const handleToggle = () => {
+    const newState = !isExpanded;
+    logger.info('HealthStatusIndicator', `Popup ${newState ? 'opened' : 'closed'}`);
+    setIsExpanded(newState);
+  };
+
+  const handleRefresh = () => {
+    logger.info('HealthStatusIndicator', 'User triggered manual refresh');
+    refresh();
+  };
+
   return (
     <>
       <div className="fixed bottom-6 right-6 z-50">
         <HealthStatusButton
           status={overallStatus}
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={handleToggle}
           tooltip={getStatusMessage(overallStatus)}
           isExpanded={isExpanded}
         />
@@ -57,8 +88,11 @@ export default function HealthStatusIndicator() {
       {isExpanded && (
         <HealthStatusPopup
           health={health}
-          onClose={() => setIsExpanded(false)}
-          onRefresh={refresh}
+          onClose={() => {
+            logger.info('HealthStatusIndicator', 'Popup closed');
+            setIsExpanded(false);
+          }}
+          onRefresh={handleRefresh}
           loading={loading}
         />
       )}

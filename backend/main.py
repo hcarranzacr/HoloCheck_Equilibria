@@ -1,101 +1,93 @@
-"""
-FastAPI Application Entry Point
-"""
 import logging
-from datetime import datetime
-
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+# Import configuration
 from core.config import settings
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-from routers import (
-    auth,
-    health,
-    user_profile,
-    user_profiles,
-    dashboards,
-    biometric_indicators,
-    biometric_measurements,
-    deepaffex,
-    organizations,
-    departments,
-    ai_analysis_logs,
-    ai_analysis_results,
-    app_settings,
-    benefits_management,
-    department_insights,
-    organization_branding,
-    organization_insights,
-    organization_subscriptions,
-    organization_usage_summary,
-    param_industries,
-    recommendations,
-)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    logger.info("🚀 Starting HoloCheck Equilibria Backend...")
+    yield
+    logger.info("👋 Shutting down HoloCheck Equilibria Backend...")
 
-logger.info("✅ All routers imported successfully")
-
+# Create FastAPI app
 app = FastAPI(
     title="HoloCheck Equilibria API",
-    description="Backend API for HoloCheck Equilibria health monitoring platform",
+    description="Backend API for HoloCheck Equilibria - Organizational Wellness Platform",
     version="1.0.0",
+    lifespan=lifespan
 )
 
-# CORS configuration
+# Configure CORS - CRITICAL: Allow all origins for Atoms platform
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins for Atoms platform compatibility
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
-# Root health check endpoint - MUST be simple and fast
-@app.get("/")
-async def root():
-    """Root endpoint - simple health check for deployment"""
-    return {"status": "healthy"}
+# Import routers
+try:
+    from routers import (
+        auth, 
+        user_profiles, 
+        departments, 
+        biometric_indicators, 
+        dashboards, 
+        prompts, 
+        benefits_management,
+        organization_branding,
+        i18n
+    )
+    
+    # Include routers
+    app.include_router(auth.router, tags=["Authentication"])
+    app.include_router(user_profiles.router, tags=["User Profiles"])
+    app.include_router(departments.router, tags=["Departments"])
+    app.include_router(biometric_indicators.router, tags=["Biometric Indicators"])
+    app.include_router(dashboards.router, tags=["Dashboards"])
+    app.include_router(prompts.router, tags=["Prompts"])
+    app.include_router(benefits_management.router, tags=["Benefits Management"])
+    app.include_router(organization_branding.router, tags=["Organization Branding"])
+    app.include_router(i18n.router, tags=["Internationalization"])
+    
+    logger.info("✅ All routers imported successfully")
+except Exception as e:
+    logger.error(f"❌ Error importing routers: {e}")
+    raise
 
-
+# Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint - simple response for deployment verification"""
-    return {"status": "healthy"}
+    """Health check endpoint"""
+    return JSONResponse(
+        status_code=200,
+        content={"status": "healthy"}
+    )
 
-
-# Register routers
-app.include_router(health.router)
-app.include_router(auth.router)
-app.include_router(user_profile.router)
-app.include_router(user_profiles.router)
-app.include_router(dashboards.router)
-app.include_router(biometric_indicators.router)
-app.include_router(biometric_measurements.router)
-app.include_router(deepaffex.router)
-app.include_router(organizations.router)
-app.include_router(departments.router)
-app.include_router(ai_analysis_logs.router)
-app.include_router(ai_analysis_results.router)
-app.include_router(app_settings.router)
-app.include_router(benefits_management.router)
-app.include_router(department_insights.router)
-app.include_router(organization_branding.router)
-app.include_router(organization_insights.router)
-app.include_router(organization_subscriptions.router)
-app.include_router(organization_usage_summary.router)
-app.include_router(param_industries.router)
-app.include_router(recommendations.router)
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "HoloCheck Equilibria API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 logger.info("✅ Application startup complete")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

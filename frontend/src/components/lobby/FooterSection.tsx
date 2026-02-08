@@ -1,95 +1,156 @@
 import { OrganizationBranding } from '@/types/branding';
-import { Mail, Phone, Globe, Facebook, Linkedin, Instagram, Twitter, Youtube } from 'lucide-react';
+import { Mail, Phone, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { logger } from '@/lib/logger';
 
 interface FooterSectionProps {
   branding: OrganizationBranding | null;
 }
 
 export default function FooterSection({ branding }: FooterSectionProps) {
-  const socialLinks = branding?.social_links;
-  const hasContact = branding?.contact_email || branding?.contact_phone || branding?.website_url;
-  const hasSocial = socialLinks && Object.keys(socialLinks).length > 0;
+  // Use 'lobby' namespace as per official guide
+  const { t, i18n } = useTranslation('lobby');
+  const currentYear = new Date().getFullYear();
+  const organizationName = branding?.organization_name || 'HoloCheck Equilibria';
+  
+  // Official keys from Guia_i18n_Equilibria_Final.docx:
+  // - lobby.footer_contact
+  // - lobby.slogan
+  // - lobby.powered_by
+  const contactTitle = t('lobby.footer_contact', 'Contacto');
+  const slogan = t('lobby.slogan', branding?.slogan || 'Biointeligencia para Empresas Conscientes');
+  const poweredBy = t('lobby.powered_by', 'Impulsado por Prodeo & QIDIA');
 
-  // Don't render if no contact info or social links
-  if (!hasContact && !hasSocial) {
-    return null;
-  }
-
-  const getSocialIcon = (platform: string) => {
-    const icons: Record<string, React.ReactNode> = {
-      facebook: <Facebook className="w-5 h-5" />,
-      linkedin: <Linkedin className="w-5 h-5" />,
-      instagram: <Instagram className="w-5 h-5" />,
-      twitter: <Twitter className="w-5 h-5" />,
-      youtube: <Youtube className="w-5 h-5" />
-    };
-    return icons[platform.toLowerCase()] || null;
-  };
-
+  logger.debug('FooterSection', 'Translation keys used', {
+    language: i18n.language,
+    namespace: 'lobby',
+    keys: ['lobby.footer_contact', 'lobby.slogan', 'lobby.powered_by'],
+    values: { contactTitle, slogan, poweredBy }
+  });
+  
   return (
-    <footer className="py-12 px-4 bg-gray-900 text-white">
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Contact Information */}
-        {hasContact && (
-          <div className="flex flex-wrap justify-center gap-6 text-gray-300">
+    <footer className="bg-gray-900 text-white py-12 px-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+          {/* Contact Information */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold mb-4">{contactTitle}</h3>
+            
             {branding?.contact_email && (
               <a 
                 href={`mailto:${branding.contact_email}`}
-                className="flex items-center gap-2 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
               >
-                <Mail className="w-5 h-5" />
-                <span>{branding.contact_email}</span>
+                <Mail className="w-4 h-4" />
+                <span className="text-sm">{branding.contact_email}</span>
               </a>
             )}
             
             {branding?.contact_phone && (
               <a 
                 href={`tel:${branding.contact_phone}`}
-                className="flex items-center gap-2 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
               >
-                <Phone className="w-5 h-5" />
-                <span>{branding.contact_phone}</span>
+                <Phone className="w-4 h-4" />
+                <span className="text-sm">{branding.contact_phone}</span>
+              </a>
+            )}
+          </div>
+
+          {/* Legal Links */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold mb-4">Legal</h3>
+            
+            {branding?.custom_terms_url && (
+              <a 
+                href={branding.custom_terms_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+              >
+                <span className="text-sm">Términos y Condiciones</span>
+                <ExternalLink className="w-3 h-3" />
               </a>
             )}
             
-            {branding?.website_url && (
+            {branding?.custom_privacy_url && (
               <a 
-                href={branding.website_url}
+                href={branding.custom_privacy_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
               >
-                <Globe className="w-5 h-5" />
-                <span>Sitio Web</span>
+                <span className="text-sm">Política de Privacidad</span>
+                <ExternalLink className="w-3 h-3" />
               </a>
             )}
           </div>
-        )}
 
-        {/* Social Media Links */}
-        {hasSocial && (
-          <div className="flex justify-center gap-4">
-            {Object.entries(socialLinks || {}).map(([platform, url]) => {
-              if (!url) return null;
-              return (
-                <a
-                  key={platform}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-3 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors"
-                  aria-label={platform}
-                >
-                  {getSocialIcon(platform)}
-                </a>
-              );
-            })}
-          </div>
-        )}
+          {/* Social Links */}
+          {branding?.social_links && Object.keys(branding.social_links).length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold mb-4">Síguenos</h3>
+              <div className="flex flex-col gap-2">
+                {branding.social_links.twitter && (
+                  <a 
+                    href={branding.social_links.twitter}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  >
+                    <span className="text-sm">Twitter</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {branding.social_links.facebook && (
+                  <a 
+                    href={branding.social_links.facebook}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  >
+                    <span className="text-sm">Facebook</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {branding.social_links.linkedin && (
+                  <a 
+                    href={branding.social_links.linkedin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  >
+                    <span className="text-sm">LinkedIn</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {branding.social_links.instagram && (
+                  <a 
+                    href={branding.social_links.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  >
+                    <span className="text-sm">Instagram</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
-        {/* Copyright */}
-        <div className="text-center text-gray-400 text-sm pt-8 border-t border-gray-800">
-          <p>© {new Date().getFullYear()} HoloCheck Equilibria - Todos los derechos reservados</p>
+        {/* Copyright and Powered By */}
+        <div className="border-t border-gray-700 pt-8 text-center space-y-2">
+          <p className="text-sm text-gray-400">
+            © {currentYear} {organizationName}. Todos los derechos reservados.
+          </p>
+          <p className="text-xs text-gray-500 italic">
+            {slogan}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            {poweredBy}
+          </p>
         </div>
       </div>
     </footer>

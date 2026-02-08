@@ -1,0 +1,77 @@
+{
+  "version": "v2026.02.08-recovery-point-alpha",
+  "timestamp": "2026-02-08T19:05:08.861441Z",
+  "tag": "recovery-point-2026-02-08-pre-regression",
+  "branch": "main",
+  "system_state": {
+    "backend": {
+      "framework": "FastAPI",
+      "database": "PostgreSQL (Supabase)",
+      "orm": "SQLAlchemy AsyncPG",
+      "auth": "Supabase Auth",
+      "port": 8000,
+      "status": "operational"
+    },
+    "frontend": {
+      "framework": "React + Vite",
+      "ui_library": "Shadcn-UI",
+      "i18n": "i18next",
+      "port": 5173,
+      "status": "operational"
+    },
+    "database": {
+      "provider": "Supabase",
+      "url": "https://nmwbfvvacilgyxbwvnqb.supabase.co",
+      "tables": [
+        "i18n_namespaces",
+        "i18n_keys",
+        "i18n_translations",
+        "i18n_overrides",
+        "i18n_translation_logs"
+      ]
+    }
+  },
+  "known_issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Supabase client version compatibility",
+      "description": "supabase==2.3.4 incompatible with httpx==0.25.2 - proxy argument error",
+      "severity": "high",
+      "status": "identified"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "Database connection error",
+      "description": "Tenant or user not found on i18n endpoints",
+      "severity": "high",
+      "status": "under_investigation"
+    },
+    {
+      "id": "ISSUE-003",
+      "title": "Missing i18n translations",
+      "description": "lobby.* keys exist but have no translations in database",
+      "severity": "medium",
+      "status": "identified"
+    }
+  ],
+  "critical_files": [
+    "backend/core/config.py",
+    "backend/core/supabase_client.py",
+    "backend/routers/i18n.py",
+    "backend/routers/auth.py",
+    "backend/dependencies/auth.py",
+    "frontend/src/i18n/config.ts",
+    "frontend/src/pages/Lobby.tsx",
+    "frontend/src/components/lobby/HeroSection.tsx",
+    "frontend/src/components/lobby/FooterSection.tsx"
+  ],
+  "recovery_steps": [
+    "1. Clone repository from GitHub",
+    "2. Checkout recovery tag: git checkout recovery-point-2026-02-08-pre-regression",
+    "3. Install backend dependencies: cd backend && pip install -r requirements.txt",
+    "4. Install frontend dependencies: cd frontend && pnpm install",
+    "5. Configure .env with Supabase credentials",
+    "6. Start backend: python3 -m uvicorn main:app --reload",
+    "7. Start frontend: pnpm run dev"
+  ]
+}

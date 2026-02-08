@@ -69,6 +69,60 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loadBrandingByOrgId = async (organizationId: string) => {
+    try {
+      console.log('🎨 [BrandingContext] Loading branding for organization:', organizationId);
+      setLoading(true);
+
+      // Get organization branding via apiClient
+      const brandingResponse = await apiClient.call(
+        `/api/v1/organization-branding?organization_id=${organizationId}`,
+        'GET'
+      );
+
+      const brandingData = brandingResponse.items?.[0] || brandingResponse[0];
+      
+      if (brandingData) {
+        // Get organization name
+        const org = await apiClient.organizations.get(organizationId);
+        
+        const fullBranding = {
+          ...brandingData,
+          organization_name: org?.name || 'Organization',
+        };
+        
+        setBranding(fullBranding);
+        applyBranding(brandingData);
+        
+        console.log('✅ [BrandingContext] Branding loaded successfully');
+      } else {
+        console.warn('⚠️ [BrandingContext] No branding found for organization:', organizationId);
+      }
+    } catch (error) {
+      console.error('❌ [BrandingContext] Error loading branding by org ID:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearBranding = () => {
+    console.log('🧹 [BrandingContext] Clearing branding');
+    setBranding(null);
+    setUserProfile(null);
+    
+    // Remove custom styles
+    const styleElement = document.getElementById('custom-branding-styles');
+    if (styleElement) {
+      styleElement.remove();
+    }
+    
+    // Reset CSS variables to defaults
+    const root = document.documentElement;
+    root.style.removeProperty('--primary-color');
+    root.style.removeProperty('--secondary-color');
+    root.style.removeProperty('--font-family');
+  };
+
   const applyBranding = (brandingData: OrganizationBranding) => {
     const root = document.documentElement;
 
@@ -107,7 +161,16 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <BrandingContext.Provider value={{ branding, userProfile, loading, refreshBranding }}>
+    <BrandingContext.Provider 
+      value={{ 
+        branding, 
+        userProfile, 
+        loading, 
+        refreshBranding,
+        loadBrandingByOrgId,
+        clearBranding
+      }}
+    >
       {children}
     </BrandingContext.Provider>
   );

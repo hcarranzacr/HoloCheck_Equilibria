@@ -2,6 +2,9 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrganizationBranding, UserProfile, ROLE_DISPLAY_NAMES } from '@/types/branding';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import LanguageSelector from '@/components/common/LanguageSelector';
+import { logger } from '@/lib/logger';
 
 interface HeroSectionProps {
   branding: OrganizationBranding | null;
@@ -18,9 +21,25 @@ export default function HeroSection({
   skipLobby,
   onSkipChange
 }: HeroSectionProps) {
-  const welcomeMessage = branding?.welcome_message || 'Bienvenido a HoloCheck Equilibria';
-  const tagline = branding?.company_tagline || branding?.slogan || 'Tu salud, nuestra prioridad';
+  // Use 'lobby' namespace as per official guide
+  const { t, i18n } = useTranslation('lobby');
+  
+  // Official keys from Guia_i18n_Equilibria_Final.docx:
+  // - lobby.login_welcome
+  // - lobby.dashboard_welcome
+  // - lobby.security_note
+  const welcomeMessage = t('lobby.login_welcome', branding?.login_message || 'Bienvenido');
+  const dashboardWelcome = t('lobby.dashboard_welcome', branding?.dashboard_welcome_text || 'Apoyamos tu salud y rendimiento');
+  const securityNote = t('lobby.security_note', 'Tus datos biométricos están protegidos con los más altos estándares de seguridad');
+  
   const roleName = profile?.role ? ROLE_DISPLAY_NAMES[profile.role] : 'Usuario';
+
+  logger.debug('HeroSection', 'Translation keys used', {
+    language: i18n.language,
+    namespace: 'lobby',
+    keys: ['lobby.login_welcome', 'lobby.dashboard_welcome', 'lobby.security_note'],
+    values: { welcomeMessage, dashboardWelcome, securityNote }
+  });
 
   return (
     <div 
@@ -31,6 +50,11 @@ export default function HeroSection({
           : `linear-gradient(135deg, ${branding?.primary_color || '#0EA5E9'}, ${branding?.secondary_color || '#1E40AF'})`
       }}
     >
+      {/* Language Selector - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        <LanguageSelector />
+      </div>
+
       {/* Animated background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0" style={{
@@ -71,9 +95,9 @@ export default function HeroSection({
             </div>
           )}
 
-          {/* Tagline */}
+          {/* Dashboard welcome text */}
           <p className="text-xl md:text-2xl text-white/95 italic font-light">
-            "{tagline}"
+            "{dashboardWelcome}"
           </p>
         </div>
 
@@ -84,7 +108,7 @@ export default function HeroSection({
             size="lg"
             className="bg-white text-gray-900 hover:bg-gray-100 text-lg px-8 py-6 rounded-full shadow-xl hover:shadow-2xl transform hover:-translate-y-1 transition-all duration-300"
           >
-            Continuar al Dashboard
+            {t('lobby.main_message', 'Continuar al Dashboard')}
             <ArrowRight className="ml-2 w-5 h-5" />
           </Button>
 
@@ -100,10 +124,15 @@ export default function HeroSection({
               htmlFor="skip-lobby"
               className="text-sm cursor-pointer hover:text-white transition-colors"
             >
-              No mostrar esta página nuevamente
+              {t('lobby.login_hint', 'No mostrar esta página nuevamente')}
             </label>
           </div>
         </div>
+
+        {/* Security note */}
+        <p className="text-xs text-white/70 max-w-2xl mx-auto pt-4">
+          🔒 {securityNote}
+        </p>
       </div>
     </div>
   );

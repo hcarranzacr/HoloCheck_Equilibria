@@ -6,7 +6,7 @@ Manage organization branding settings including logos, colors, and themes
 import logging
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,13 +109,43 @@ async def create_organization_branding(
         )
 
 
+@router.get("/", response_model=List[OrganizationBrandingResponse])
+async def get_organization_branding_by_query(
+    organization_id: Optional[str] = Query(None, description="Filter by organization ID"),
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get organization branding settings by query parameters"""
+    try:
+        from sqlalchemy import select
+        
+        query = select(OrganizationBranding)
+        
+        if organization_id:
+            query = query.where(OrganizationBranding.organization_id == organization_id)
+        
+        result = await db.execute(query)
+        brandings = result.scalars().all()
+        
+        if not brandings:
+            return []
+        
+        return brandings
+    except Exception as e:
+        logging.error(f"Error fetching organization branding: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch organization branding: {str(e)}"
+        )
+
+
 @router.get("/{organization_id}", response_model=OrganizationBrandingResponse)
 async def get_organization_branding(
     organization_id: str,
     current_user: UserResponse = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get organization branding settings"""
+    """Get organization branding settings by organization ID"""
     try:
         from sqlalchemy import select
         

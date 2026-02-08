@@ -1,644 +1,502 @@
-import { createClient } from '@metagptx/web-sdk';
 import { supabase } from './supabase';
+import { logger } from './logger';
 
-const client = createClient();
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
-export interface BiometricMeasurement {
-  id: string;
-  user_id: string;
-  scan_id: string;
-  measurement_timestamp: string;
-  heart_rate?: number;
-  respiratory_rate?: number;
-  blood_pressure?: number;
-  sdnn?: number;
-  rmssd?: number;
-  mental_stress_index?: number;
-  physiological_score?: number;
-  mental_score?: number;
-  physical_score?: number;
-  vital_index_score?: number;
-  risk_score?: number;
-  bmi?: number;
-  waist_height_ratio?: number;
-  body_shape_index?: number;
-  abdominal_circumference_cm?: number;
-  global_health_score?: number;
-  wellness_index_score?: number;
-  ai_stress?: number;
-  ai_fatigue?: number;
-  ai_recovery?: number;
-  ai_cognitive_load?: number;
-  cardiac_load?: number;
-  vascular_capacity?: number;
-  cv_risk_heart_attack?: number;
-  cv_risk_stroke?: number;
-  bio_age_basic?: number;
-  arrhythmias_detected?: boolean;
-  signal_to_noise_ratio?: number;
-  scan_quality_index?: number;
-  created_at: string;
+interface ApiResponse<T = any> {
+  data?: T;
+  error?: string;
 }
 
-export interface BiometricIndicatorInfo {
-  indicator_code: string;
-  display_name: string;
-  unit: string | null;
-  min_value: string;
-  max_value: string;
-  description: string;
-  interpretation: string;
-  influencing_factors: string;
-  tips: string;
-  risk_ranges: Record<string, [number, number]> | null;
-  is_clinical: boolean;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  full_name: string;
-  role: string;
-  department?: string;
-  position?: string;
-  hire_date?: string;
-  is_active: boolean;
-  created_at: string;
-}
-
-export interface Recommendation {
-  id: string;
-  user_id: string;
-  partnership_id: string;
-  recommendation_type: string;
-  priority: string;
-  title: string;
-  description: string;
-  benefits: string[];
-  estimated_impact: string;
-  validity_start: string;
-  validity_end: string;
-  is_active: boolean;
-  created_at: string;
-  partnership?: {
-    id: string;
-    company_name: string;
-    category: string;
-    logo_url?: string;
-  };
-}
-
-// Helper function to get Supabase auth token
+// Get auth token from Supabase
 async function getAuthToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
+}
+
+// Generic API call function that returns wrapped response
+async function apiCall<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  const method = options.method || 'GET';
+  
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
-  } catch (error) {
-    console.error('Error getting auth token:', error);
-    return null;
-  }
-}
-
-class ApiClient {
-  private client = client;
-
-  // Auth namespace for compatibility
-  auth = {
-    me: async () => {
-      const user = await this.client.auth.me();
-      return user.data;
-    },
-    toLogin: async () => {
-      await this.client.auth.toLogin();
-    },
-    logout: async () => {
-      await this.client.auth.logout();
-    },
-    getSession: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      return session;
-    },
-    getUser: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return user;
-    },
-    signOut: async () => {
-      await supabase.auth.signOut();
-      window.location.href = '/login';
-    }
-  };
-
-  // Auth methods
-  async getCurrentUser() {
-    const user = await this.client.auth.me();
-    return user.data;
-  }
-
-  async login() {
-    await this.client.auth.toLogin();
-  }
-
-  async logout() {
-    await this.client.auth.logout();
-  }
-
-  // User Profiles namespace for compatibility
-  userProfiles = {
-    query: async (params: any) => {
-      const response = await this.client.entities.user_profiles.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (params: any) => {
-      const response = await this.client.entities.user_profiles.get(params);
-      return response.data;
-    },
-    list: async (params?: any) => {
-      const response = await this.client.entities.user_profiles.query(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    listAll: async (params?: any) => {
-      const response = await this.client.entities.user_profiles.queryAll(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.user_profiles.create({ data });
-      return response.data;
-    },
-    update: async (id: string, data: any) => {
-      const response = await this.client.entities.user_profiles.update({ id, data });
-      return response.data;
-    },
-    delete: async (id: string) => {
-      return await this.client.entities.user_profiles.delete({ id });
-    }
-  };
-
-  // Organizations namespace
-  organizations = {
-    query: async (params: any) => {
-      const response = await this.client.entities.organizations.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.organizations.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    list: async (params?: any) => {
-      const response = await this.client.entities.organizations.queryAll(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (id: string) => {
-      const response = await this.client.entities.organizations.get({ id });
-      return response.data;
-    }
-  };
-
-  // Departments namespace
-  departments = {
-    query: async (params: any) => {
-      const response = await this.client.entities.departments.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.departments.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    list: async (params?: any) => {
-      const response = await this.client.entities.departments.queryAll(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    listAll: async (params?: any) => {
-      const response = await this.client.entities.departments.queryAll(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (id: string) => {
-      const response = await this.client.entities.departments.get({ id });
-      return response.data;
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.departments.create({ data });
-      return response.data;
-    },
-    update: async (id: string, data: any) => {
-      const response = await this.client.entities.departments.update({ id, data });
-      return response.data;
-    },
-    delete: async (id: string) => {
-      return await this.client.entities.departments.delete({ id });
-    }
-  };
-
-  // Measurements namespace
-  measurements = {
-    query: async (params: any) => {
-      const response = await this.client.entities.biometric_measurements.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.biometric_measurements.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.biometric_measurements.create({ data });
-      return response.data;
-    }
-  };
-
-  // Subscription Usage Logs namespace (read-only for admin)
-  subscriptionUsageLogs = {
-    list: async (params?: any) => {
-      const response = await this.client.entities.subscription_usage_logs.query(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    listAll: async (params?: any) => {
-      const response = await this.client.entities.subscription_usage_logs.queryAll(params || {});
-      return { data: response.data, items: response.data.items };
-    },
-    get: async (id: string) => {
-      const response = await this.client.entities.subscription_usage_logs.get({ id });
-      return response.data;
-    }
-  };
-
-  // Param Prompt Templates namespace (read-only)
-  paramPromptTemplates = {
-    list: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/param-prompt-templates',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return { data: response.data, items: response.data.items || response.data };
-    },
-    listAll: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/param-prompt-templates/all',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return { data: response.data, items: response.data.items || response.data };
-    },
-    get: async (id: string) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: `/api/v1/param-prompt-templates/${id}`,
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    }
-  };
-
-  // Param AI Prompt Configs namespace (read-only)
-  paramAiPromptConfigs = {
-    list: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/param-ai-prompt-configs',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return { data: response.data, items: response.data.items || response.data };
-    },
-    listAll: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/param-ai-prompt-configs/all',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return { data: response.data, items: response.data.items || response.data };
-    },
-    get: async (id: string) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: `/api/v1/param-ai-prompt-configs/${id}`,
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    }
-  };
-
-  // Dashboards namespace - FIXED: Now includes Supabase auth token
-  dashboards = {
-    getStats: async (params: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/stats',
-        method: 'GET',
-        data: params,
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    hr: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/hr',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    leader: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/leader',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    },
-    admin: async (params?: any) => {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/dashboards/admin',
-        method: 'GET',
-        data: params || {},
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    }
-  };
-
-  // AI Analyses namespace
-  aiAnalyses = {
-    query: async (params: any) => {
-      const response = await this.client.entities.ai_analyses.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.ai_analyses.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    }
-  };
-
-  // Prompts namespace
-  prompts = {
-    query: async (params: any) => {
-      const response = await this.client.entities.prompts.query(params);
-      return { data: response.data, items: response.data.items };
-    },
-    queryAll: async (params: any) => {
-      const response = await this.client.entities.prompts.queryAll(params);
-      return { data: response.data, items: response.data.items };
-    },
-    create: async (data: any) => {
-      const response = await this.client.entities.prompts.create({ data });
-      return response.data;
-    },
-    update: async (id: string, data: any) => {
-      const response = await this.client.entities.prompts.update({ id, data });
-      return response.data;
-    },
-    delete: async (id: string) => {
-      return await this.client.entities.prompts.delete({ id });
-    }
-  };
-
-  // Audit log method - updated signature to match usage
-  async logAudit(action: string, entityType: string, entityId?: string, details?: any) {
-    try {
-      const token = await getAuthToken();
-      const user = await this.getCurrentUser();
-      await this.client.apiCall.invoke({
-        url: '/api/v1/audit-logs',
-        method: 'POST',
-        data: { user_id: user?.id, action, entity_type: entityType, entity_id: entityId, details },
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-    } catch (error) {
-      console.error('Error logging audit:', error);
-    }
-  }
-
-  // Biometric measurements
-  async getLatestMeasurement(userId: string): Promise<BiometricMeasurement | null> {
-    try {
-      const response = await this.client.entities.biometric_measurements.query({
-        query: { user_id: userId },
-        sort: '-measurement_timestamp',
-        limit: 1,
-      });
-      return response.data.items[0] || null;
-    } catch (error) {
-      console.error('Error fetching latest measurement:', error);
-      return null;
-    }
-  }
-
-  async getMeasurementHistory(userId: string, limit = 10): Promise<BiometricMeasurement[]> {
-    try {
-      const response = await this.client.entities.biometric_measurements.query({
-        query: { user_id: userId },
-        sort: '-measurement_timestamp',
-        limit,
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching measurement history:', error);
-      return [];
-    }
-  }
-
-  async getAllMeasurements(limit = 100): Promise<BiometricMeasurement[]> {
-    try {
-      const response = await this.client.entities.biometric_measurements.queryAll({
-        sort: '-measurement_timestamp',
-        limit,
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching all measurements:', error);
-      return [];
-    }
-  }
-
-  // Biometric indicator ranges - FIXED: Now includes auth token
-  async getBiometricIndicatorRanges(): Promise<Record<string, Record<string, [number, number]>>> {
-    try {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: '/api/v1/biometric-indicators/ranges',
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching biometric indicator ranges:', error);
-      return {};
-    }
-  }
-
-  // Biometric indicator info - FIXED: Now includes auth token
-  async getBiometricIndicatorInfo(indicatorCode: string): Promise<BiometricIndicatorInfo | null> {
-    try {
-      const token = await getAuthToken();
-      const response = await this.client.apiCall.invoke({
-        url: `/api/v1/biometric-indicators/info/${indicatorCode}`,
-        method: 'GET',
-        options: {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching indicator info for ${indicatorCode}:`, error);
-      return null;
-    }
-  }
-
-  // Users
-  async getAllUsers(): Promise<User[]> {
-    try {
-      const response = await this.client.entities.users.queryAll({
-        sort: '-created_at',
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching all users:', error);
-      return [];
-    }
-  }
-
-  async getUserById(userId: string): Promise<User | null> {
-    try {
-      const response = await this.client.entities.users.get({
-        id: userId,
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching user ${userId}:`, error);
-      return null;
-    }
-  }
-
-  // Recommendations
-  async getUserRecommendations(userId: string): Promise<Recommendation[]> {
-    try {
-      const response = await this.client.entities.recommendations.query({
-        query: { user_id: userId, is_active: true },
-        sort: '-created_at',
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching user recommendations:', error);
-      return [];
-    }
-  }
-
-  async getRecommendationById(recommendationId: string): Promise<Recommendation | null> {
-    try {
-      const response = await this.client.entities.recommendations.get({
-        id: recommendationId,
-      });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching recommendation ${recommendationId}:`, error);
-      return null;
-    }
-  }
-
-  // Partnerships
-  async getAllPartnerships() {
-    try {
-      const response = await this.client.entities.partnerships.queryAll({
-        sort: '-created_at',
-      });
-      return response.data.items;
-    } catch (error) {
-      console.error('Error fetching partnerships:', error);
-      return [];
-    }
-  }
-
-  async createPartnership(data: any) {
-    try {
-      const response = await this.client.entities.partnerships.create({
-        data,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error creating partnership:', error);
-      throw error;
-    }
-  }
-
-  async updatePartnership(id: string, data: any) {
-    try {
-      const response = await this.client.entities.partnerships.update({
-        id,
-        data,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error updating partnership:', error);
-      throw error;
-    }
-  }
-
-  async deletePartnership(id: string) {
-    try {
-      await this.client.entities.partnerships.delete({ id });
-    } catch (error) {
-      console.error('Error deleting partnership:', error);
-      throw error;
-    }
-  }
-
-  // Generic API call with automatic auth
-  async call(url: string, method: string = 'GET', data?: any) {
+    logger.apiRequest(endpoint, method, options.body ? JSON.parse(options.body as string) : undefined);
+    
     const token = await getAuthToken();
-    if (!token) {
-      throw new Error('No authentication token found');
+    
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...options.headers,
+    };
+
+    const url = `${API_BASE_URL}${endpoint}`;
+    logger.debug('API', `Full URL: ${url}`);
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    logger.apiResponse(endpoint, response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      logger.apiError(endpoint, { status: response.status, error: errorData });
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
 
-    const response = await this.client.apiCall.invoke({
-      url,
-      method,
-      data,
-      options: {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }
-    });
-    return response.data;
+    const data = await response.json();
+    logger.debug('API', `Response data for ${endpoint}`, data);
+    return { data };
+  } catch (error) {
+    logger.apiError(endpoint, error);
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-export const apiClient = new ApiClient();
-export const api = apiClient; // Alias for compatibility
+// Helper function that unwraps the response and returns data directly
+async function apiCallDirect<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T | null> {
+  const response = await apiCall<T>(endpoint, options);
+  return response.data || null;
+}
+
+// i18n API calls
+export const i18nApi = {
+  getTranslations: async (screenCode?: string, locale?: string) => {
+    logger.i18nLoadTranslations(screenCode || 'all', locale || 'default');
+    
+    const params = new URLSearchParams();
+    if (screenCode) params.append('screen_code', screenCode);
+    if (locale) params.append('locale', locale);
+    
+    const queryString = params.toString();
+    const endpoint = `/api/v1/i18n/translations${queryString ? `?${queryString}` : ''}`;
+    
+    const response = await apiCall(endpoint);
+    
+    if (response.data) {
+      const count = Array.isArray(response.data) ? response.data.length : Object.keys(response.data).length;
+      logger.i18nTranslationsLoaded(screenCode || 'all', locale || 'default', count);
+    }
+    
+    return response;
+  },
+  getLocales: async (screenCode?: string) => {
+    const params = new URLSearchParams();
+    if (screenCode) params.append('screen_code', screenCode);
+    
+    const queryString = params.toString();
+    const endpoint = `/api/v1/i18n/locales${queryString ? `?${queryString}` : ''}`;
+    
+    return apiCall<string[]>(endpoint);
+  },
+  getScreens: async () => {
+    return apiCall<string[]>('/api/v1/i18n/screens');
+  },
+};
+
+// Auth API
+export const authApi = {
+  me: () => apiCallDirect('/api/v1/auth/me'),
+  getUser: () => apiCallDirect('/api/v1/auth/user'),
+  getSession: () => apiCallDirect('/api/v1/auth/session'),
+};
+
+// User Profiles API
+export const userProfilesApi = {
+  getMe: () => apiCall('/api/v1/user-profiles/me'),
+  getById: (userId: string) => apiCallDirect(`/api/v1/user-profiles/${userId}`),
+  get: (userId: string) => apiCallDirect(`/api/v1/user-profiles/${userId}`),
+  update: (userId: string, data: any) => 
+    apiCall(`/api/v1/user-profiles/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  create: (data: any) =>
+    apiCallDirect('/api/v1/user-profiles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  delete: (userId: string) =>
+    apiCall(`/api/v1/user-profiles/${userId}`, {
+      method: 'DELETE',
+    }),
+  list: (organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    return apiCallDirect(`/api/v1/user-profiles${params.toString() ? `?${params}` : ''}`);
+  },
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/user-profiles${params.toString() ? `?${params}` : ''}`);
+  },
+  query: (filters: any) => {
+    const params = new URLSearchParams(filters);
+    return apiCallDirect(`/api/v1/user-profiles?${params}`);
+  },
+  getAll: (organizationId?: string, departmentId?: string, role?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    if (departmentId) params.append('department_id', departmentId);
+    if (role) params.append('role', role);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/user-profiles${queryString ? `?${queryString}` : ''}`);
+  },
+};
+
+// Departments API
+export const departmentsApi = {
+  getAll: (organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/departments${queryString ? `?${queryString}` : ''}`);
+  },
+  list: () => apiCallDirect('/api/v1/departments'),
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/departments${params.toString() ? `?${params}` : ''}`);
+  },
+  query: (filters: any) => {
+    const params = new URLSearchParams(filters);
+    return apiCallDirect(`/api/v1/departments?${params}`);
+  },
+  getById: (departmentId: string) => apiCall(`/api/v1/departments/${departmentId}`),
+  get: (departmentId: string) => apiCallDirect(`/api/v1/departments/${departmentId}`),
+  create: (data: any) =>
+    apiCallDirect('/api/v1/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (departmentId: string, data: any) =>
+    apiCallDirect(`/api/v1/departments/${departmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (departmentId: string) =>
+    apiCall(`/api/v1/departments/${departmentId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// Organizations API
+export const organizationsApi = {
+  list: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/organizations${params.toString() ? `?${params}` : ''}`);
+  },
+  get: (organizationId: string) => apiCallDirect(`/api/v1/organizations/${organizationId}`),
+};
+
+// Biometric Indicators API
+export const biometricIndicatorsApi = {
+  getAll: () => apiCall('/api/v1/biometric-indicators'),
+  getById: (indicatorId: string) => apiCallDirect(`/api/v1/biometric-indicators/${indicatorId}`),
+};
+
+// Measurements API
+export const measurementsApi = {
+  create: (data: any) =>
+    apiCallDirect('/api/v1/measurements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/measurements${params.toString() ? `?${params}` : ''}`);
+  },
+};
+
+// Dashboards API
+export const dashboardsApi = {
+  getEmployeeDashboard: (userId: string) => 
+    apiCall(`/api/v1/dashboards/employee/${userId}`),
+  getHRDashboard: (organizationId: string, departmentId?: string) => {
+    const params = new URLSearchParams();
+    if (departmentId) params.append('department_id', departmentId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/dashboards/hr/${organizationId}${queryString ? `?${queryString}` : ''}`);
+  },
+  getLeaderDashboard: (userId: string) =>
+    apiCall(`/api/v1/dashboards/leader/${userId}`),
+  getOrgDashboard: (organizationId: string) =>
+    apiCall(`/api/v1/dashboards/org/${organizationId}`),
+  getAdminDashboard: () =>
+    apiCall('/api/v1/dashboards/admin'),
+  admin: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/dashboards/admin${params.toString() ? `?${params}` : ''}`);
+  },
+  hr: (organizationId: string, departmentId?: string) => {
+    const params = new URLSearchParams();
+    if (departmentId) params.append('department_id', departmentId);
+    return apiCallDirect(`/api/v1/dashboards/hr/${organizationId}${params.toString() ? `?${params}` : ''}`);
+  },
+  leader: (userId: string) => apiCallDirect(`/api/v1/dashboards/leader/${userId}`),
+  getStats: (userId: string) => apiCallDirect(`/api/v1/dashboards/employee/${userId}`),
+  
+  // Evolution endpoints
+  getEmployeeEvolution: (userId: string, indicatorId: string, period: string = '30d') => {
+    const params = new URLSearchParams({ period });
+    return apiCall(`/api/v1/dashboards/employee/${userId}/evolution/${indicatorId}?${params}`);
+  },
+  getHREvolution: (organizationId: string, indicatorId: string, period: string = '30d', departmentId?: string) => {
+    const params = new URLSearchParams({ period });
+    if (departmentId) params.append('department_id', departmentId);
+    return apiCall(`/api/v1/dashboards/hr/${organizationId}/evolution/${indicatorId}?${params}`);
+  },
+  getLeaderEvolution: (userId: string, indicatorId: string, period: string = '30d') => {
+    const params = new URLSearchParams({ period });
+    return apiCall(`/api/v1/dashboards/leader/${userId}/evolution/${indicatorId}?${params}`);
+  },
+  getOrgEvolution: (organizationId: string, indicatorId: string, period: string = '30d') => {
+    const params = new URLSearchParams({ period });
+    return apiCall(`/api/v1/dashboards/org/${organizationId}/evolution/${indicatorId}?${params}`);
+  },
+  getAdminEvolution: (indicatorId: string, period: string = '30d') => {
+    const params = new URLSearchParams({ period });
+    return apiCall(`/api/v1/dashboards/admin/evolution/${indicatorId}?${params}`);
+  },
+};
+
+// Prompts API
+export const promptsApi = {
+  getAll: (organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/prompts${queryString ? `?${queryString}` : ''}`);
+  },
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/prompts${params.toString() ? `?${params}` : ''}`);
+  },
+  getById: (promptId: string) => apiCall(`/api/v1/prompts/${promptId}`),
+  create: (data: any) =>
+    apiCallDirect('/api/v1/prompts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (promptId: string, data: any) =>
+    apiCallDirect(`/api/v1/prompts/${promptId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (promptId: string) =>
+    apiCall(`/api/v1/prompts/${promptId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// AI Analyses API
+export const aiAnalysesApi = {
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/ai-analyses${params.toString() ? `?${params}` : ''}`);
+  },
+};
+
+// Param AI Prompt Configs API
+export const paramAiPromptConfigsApi = {
+  listAll: () => apiCallDirect('/api/v1/param-ai-prompt-configs'),
+};
+
+// Param Prompt Templates API
+export const paramPromptTemplatesApi = {
+  listAll: () => apiCallDirect('/api/v1/param-prompt-templates'),
+};
+
+// Subscription Usage Logs API
+export const subscriptionUsageLogsApi = {
+  listAll: (filters?: any) => {
+    const params = new URLSearchParams(filters || {});
+    return apiCallDirect(`/api/v1/subscription-usage-logs${params.toString() ? `?${params}` : ''}`);
+  },
+};
+
+// Benefits Management API
+export const benefitsApi = {
+  getBenefits: (organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/benefits${queryString ? `?${queryString}` : ''}`);
+  },
+  createBenefit: (data: any) =>
+    apiCall('/api/v1/benefits', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateBenefit: (benefitId: string, data: any) =>
+    apiCall(`/api/v1/benefits/${benefitId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteBenefit: (benefitId: string) =>
+    apiCall(`/api/v1/benefits/${benefitId}`, {
+      method: 'DELETE',
+    }),
+  getCategories: () => apiCall('/api/v1/benefit-categories'),
+  createCategory: (data: any) =>
+    apiCall('/api/v1/benefit-categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCategory: (categoryId: string, data: any) =>
+    apiCall(`/api/v1/benefit-categories/${categoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteCategory: (categoryId: string) =>
+    apiCall(`/api/v1/benefit-categories/${categoryId}`, {
+      method: 'DELETE',
+    }),
+  getEnrollments: (userId?: string, benefitId?: string) => {
+    const params = new URLSearchParams();
+    if (userId) params.append('user_id', userId);
+    if (benefitId) params.append('benefit_id', benefitId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/benefit-enrollments${queryString ? `?${queryString}` : ''}`);
+  },
+  createEnrollment: (data: any) =>
+    apiCall('/api/v1/benefit-enrollments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateEnrollment: (enrollmentId: string, data: any) =>
+    apiCall(`/api/v1/benefit-enrollments/${enrollmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteEnrollment: (enrollmentId: string) =>
+    apiCall(`/api/v1/benefit-enrollments/${enrollmentId}`, {
+      method: 'DELETE',
+    }),
+  getEligibilityRules: (benefitId?: string) => {
+    const params = new URLSearchParams();
+    if (benefitId) params.append('benefit_id', benefitId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/benefit-eligibility-rules${queryString ? `?${queryString}` : ''}`);
+  },
+  createEligibilityRule: (data: any) =>
+    apiCall('/api/v1/benefit-eligibility-rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateEligibilityRule: (ruleId: string, data: any) =>
+    apiCall(`/api/v1/benefit-eligibility-rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteEligibilityRule: (ruleId: string) =>
+    apiCall(`/api/v1/benefit-eligibility-rules/${ruleId}`, {
+      method: 'DELETE',
+    }),
+  getUsageLogs: (userId?: string, benefitId?: string) => {
+    const params = new URLSearchParams();
+    if (userId) params.append('user_id', userId);
+    if (benefitId) params.append('benefit_id', benefitId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/benefit-usage-logs${queryString ? `?${queryString}` : ''}`);
+  },
+  createUsageLog: (data: any) =>
+    apiCall('/api/v1/benefit-usage-logs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// Organization Branding API
+export const organizationBrandingApi = {
+  getAll: (organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (organizationId) params.append('organization_id', organizationId);
+    
+    const queryString = params.toString();
+    return apiCall(`/api/v1/organization-branding${queryString ? `?${queryString}` : ''}`);
+  },
+  getByOrganizationId: (organizationId: string) =>
+    apiCall(`/api/v1/organization-branding/${organizationId}`),
+  create: (data: any) =>
+    apiCall('/api/v1/organization-branding', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (brandingId: string, data: any) =>
+    apiCall(`/api/v1/organization-branding/${brandingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (brandingId: string) =>
+    apiCall(`/api/v1/organization-branding/${brandingId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// Health check API
+export const healthApi = {
+  check: () => apiCallDirect('/health'),
+  checkBackend: () => apiCallDirect('/api/health'),
+};
+
+// Create the main API client object with all methods
+export const apiClient = {
+  // Generic call method - returns data directly
+  call: async (endpoint: string, method: string = 'GET', body?: any) => {
+    const options: RequestInit = { method };
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+    return apiCallDirect(endpoint, options);
+  },
+  
+  // Helper methods - return data directly
+  getCurrentUser: () => authApi.me(),
+  getBiometricIndicatorInfo: (code: string) => biometricIndicatorsApi.getById(code),
+  getBiometricIndicatorRanges: (code: string) => apiCallDirect(`/api/v1/biometric-indicators/${code}/ranges`),
+  getMeasurementHistory: (userId: string, filters?: any) => {
+    const params = new URLSearchParams({ user_id: userId, ...filters });
+    return apiCallDirect(`/api/v1/measurements?${params}`);
+  },
+  getAllMeasurements: (limit?: number) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    return apiCallDirect(`/api/v1/measurements${params.toString() ? `?${params}` : ''}`);
+  },
+  logAudit: (data: any) => apiCallDirect('/api/v1/audit-logs', { method: 'POST', body: JSON.stringify(data) }),
+  
+  // Module APIs
+  i18n: i18nApi,
+  auth: authApi,
+  userProfiles: userProfilesApi,
+  departments: departmentsApi,
+  organizations: organizationsApi,
+  biometricIndicators: biometricIndicatorsApi,
+  measurements: measurementsApi,
+  dashboards: dashboardsApi,
+  prompts: promptsApi,
+  aiAnalyses: aiAnalysesApi,
+  paramAiPromptConfigs: paramAiPromptConfigsApi,
+  paramPromptTemplates: paramPromptTemplatesApi,
+  subscriptionUsageLogs: subscriptionUsageLogsApi,
+  benefits: benefitsApi,
+  organizationBranding: organizationBrandingApi,
+  health: healthApi,
+};
+
+// Default export (same as apiClient)
+export default apiClient;

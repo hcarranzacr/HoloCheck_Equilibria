@@ -1,11 +1,8 @@
-/**
- * Health Check Hook
- * Auto-refresh interval: 90 seconds (to avoid server overload)
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { SystemHealth } from '@/types/health-status';
-import { performHealthCheck } from '@/lib/health-check';
+import type { SystemHealth, ServiceStatus } from '@/types/health-status';
+import { logger } from '@/lib/logger';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
 interface UseHealthCheckOptions {
   autoRefresh?: boolean;
@@ -15,88 +12,142 @@ interface UseHealthCheckOptions {
 interface UseHealthCheckReturn {
   health: SystemHealth | null;
   loading: boolean;
-  error: Error | null;
+  error: string | null;
   refresh: () => Promise<void>;
 }
 
-const CACHE_DURATION = 30000; // 30 seconds cache
-const DEFAULT_REFRESH_INTERVAL = 90000; // 90 seconds (user specified)
-
 export function useHealthCheck(options: UseHealthCheckOptions = {}): UseHealthCheckReturn {
-  const {
-    autoRefresh = false,
-    refreshInterval = DEFAULT_REFRESH_INTERVAL
-  } = options;
-
+  const { autoRefresh = false, refreshInterval = 90000 } = options;
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  
-  const cacheRef = useRef<{ data: SystemHealth; timestamp: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const refresh = useCallback(async () => {
-    // Check cache first
-    if (cacheRef.current) {
-      const age = Date.now() - cacheRef.current.timestamp;
-      if (age < CACHE_DURATION) {
-        console.log('🔄 [HealthCheck] Using cached data');
-        setHealth(cacheRef.current.data);
-        setLoading(false);
-        return;
-      }
+  const checkService = async (name: string, url: string): Promise<ServiceStatus> => {
+    logger.debug('HealthCheck', `Checking ${name} at ${url}`);
+    
+    try {
+      const startTime = Date.now();
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const responseTime = Date.now() - startTime;
+
+      const isHealthy = response.ok;
+      const status = isHealthy ? 'green' : 'red';
+
+      logger.info('HealthCheck', `${name}: ${status} (${responseTime}ms)`, {
+        url,
+        status: response.status,
+        responseTime,
+      });
+
+      return {
+        name,
+        status,
+        message: isHealthy ? 'Operational' : `HTTP ${response.status}`,
+        responseTime,
+      };
+    } catch (err) {
+      logger.error('HealthCheck', `${name} check failed`, {
+        url,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+
+      return {
+        name,
+        status: 'red',
+        message: err instanceof Error ? err.message : 'Connection failed',
+        responseTime: 0,
+      };
     }
+  };
+
+  const performHealthCheck = useCallback(async () => {
+    logger.info('HealthCheck', 'Starting health check...');
+    setLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
+      // Check all services in parallel
+      const [frontend, backend, database, auth] = await Promise.all([
+        checkService('Frontend', window.location.origin),
+        checkService('Backend API', `${API_BASE_URL}/health`),
+        checkService('Database', `${API_BASE_URL}/api/v1/auth/health`),
+        checkService('Auth Service', `${API_BASE_URL}/api/v1/auth/health`),
+      ]);
+
+      // Determine overall status
+      const services = { frontend, backend, database, auth };
+      const statuses = Object.values(services).map(s => s.status);
       
-      const result = await performHealthCheck();
-      
-      // Update cache
-      cacheRef.current = {
-        data: result,
-        timestamp: Date.now()
+      let overall: 'green' | 'amber' | 'red' = 'green';
+      if (statuses.includes('red')) {
+        overall = statuses.filter(s => s === 'red').length > 1 ? 'red' : 'amber';
+      } else if (statuses.includes('amber')) {
+        overall = 'amber';
+      }
+
+      const systemHealth: SystemHealth = {
+        overall,
+        services,
+        lastUpdated: new Date(),
       };
-      
-      setHealth(result);
+
+      logger.info('HealthCheck', `✓ Health check complete: ${overall}`, {
+        frontend: frontend.status,
+        backend: backend.status,
+        database: database.status,
+        auth: auth.status,
+      });
+
+      setHealth(systemHealth);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Health check failed');
-      setError(error);
-      console.error('❌ [HealthCheck] Error:', error);
+      const errorMessage = err instanceof Error ? err.message : 'Health check failed';
+      logger.error('HealthCheck', 'Health check error', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    logger.info('HealthCheck', 'Manual refresh triggered');
+    await performHealthCheck();
+  }, [performHealthCheck]);
+
   // Initial check
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // Auto-refresh setup (90 seconds interval)
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    console.log(`⏰ [HealthCheck] Auto-refresh enabled (every ${refreshInterval / 1000}s)`);
-    
-    intervalRef.current = setInterval(() => {
-      console.log('🔄 [HealthCheck] Auto-refresh triggered');
-      refresh();
-    }, refreshInterval);
+    logger.componentMount('useHealthCheck', { autoRefresh, refreshInterval });
+    performHealthCheck();
 
     return () => {
+      logger.componentUnmount('useHealthCheck');
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
-        console.log('⏹️ [HealthCheck] Auto-refresh stopped');
       }
     };
-  }, [autoRefresh, refreshInterval, refresh]);
+  }, [performHealthCheck]);
 
-  return {
-    health,
-    loading,
-    error,
-    refresh
-  };
+  // Auto-refresh
+  useEffect(() => {
+    if (autoRefresh && refreshInterval > 0) {
+      logger.info('HealthCheck', `Auto-refresh enabled (${refreshInterval}ms)`);
+      
+      intervalRef.current = setInterval(() => {
+        logger.debug('HealthCheck', 'Auto-refresh triggered');
+        performHealthCheck();
+      }, refreshInterval);
+
+      return () => {
+        if (intervalRef.current) {
+          logger.debug('HealthCheck', 'Auto-refresh disabled');
+          clearInterval(intervalRef.current);
+        }
+      };
+    }
+  }, [autoRefresh, refreshInterval, performHealthCheck]);
+
+  return { health, loading, error, refresh };
 }

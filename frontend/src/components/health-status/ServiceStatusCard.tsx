@@ -1,98 +1,99 @@
-import { Activity, Database, Lock, Globe } from 'lucide-react';
-import type { ServiceHealth } from '@/types/health-status';
+import { CheckCircle2, XCircle, AlertCircle, Clock } from 'lucide-react';
+import type { ServiceStatus } from '@/types/health-status';
 import { STATUS_COLORS } from '@/types/health-status';
-import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
+import { es, enUS } from 'date-fns/locale';
+import { useTranslation } from 'react-i18next';
 
 interface ServiceStatusCardProps {
-  service: ServiceHealth;
+  service: ServiceStatus;
 }
 
-const SERVICE_ICONS = {
-  'Frontend': Globe,
-  'Backend API': Activity,
-  'Database': Database,
-  'Authentication': Lock
-};
-
 export default function ServiceStatusCard({ service }: ServiceStatusCardProps) {
+  const { i18n } = useTranslation();
   const colors = STATUS_COLORS[service.status];
-  const Icon = SERVICE_ICONS[service.name as keyof typeof SERVICE_ICONS] || Activity;
+  
+  const getIcon = () => {
+    switch (service.status) {
+      case 'green':
+        return <CheckCircle2 className="w-5 h-5" style={{ color: colors.icon }} />;
+      case 'amber':
+        return <AlertCircle className="w-5 h-5" style={{ color: colors.icon }} />;
+      case 'red':
+        return <XCircle className="w-5 h-5" style={{ color: colors.icon }} />;
+      default:
+        return <Clock className="w-5 h-5" style={{ color: colors.icon }} />;
+    }
+  };
+
+  const getStatusText = () => {
+    switch (service.status) {
+      case 'green':
+        return 'Operational';
+      case 'amber':
+        return 'Degraded';
+      case 'red':
+        return 'Down';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  // Format response time with validation
+  const formatResponseTime = () => {
+    if (!service.responseTime || service.responseTime === 0) {
+      return 'N/A';
+    }
+    return `${service.responseTime}ms`;
+  };
+
+  // Format last checked time with validation
+  const formatLastChecked = () => {
+    if (!service.lastChecked) {
+      return 'Never';
+    }
+
+    try {
+      const date = new Date(service.lastChecked);
+      
+      // Validate date
+      if (isNaN(date.getTime())) {
+        return 'Invalid date';
+      }
+
+      const locale = i18n.language.startsWith('es') ? es : enUS;
+      return formatDistanceToNow(date, { addSuffix: true, locale });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Invalid date';
+    }
+  };
 
   return (
     <div
-      className="p-4 rounded-xl border-2 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02]"
+      className="flex items-center justify-between p-4 rounded-lg border-2 transition-all duration-200 hover:shadow-md"
       style={{
-        background: colors.bg,
+        backgroundColor: colors.bg,
         borderColor: colors.border,
-        boxShadow: `0 4px 12px ${colors.shadow}`
       }}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div
-            className="p-2 rounded-lg"
-            style={{ backgroundColor: `${colors.icon}20` }}
-          >
-            <Icon
-              className="w-5 h-5"
-              style={{ color: colors.icon }}
-              strokeWidth={2}
-            />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{service.name}</h3>
-            <p className="text-xs text-gray-600">{service.message}</p>
-          </div>
+      <div className="flex items-center gap-3">
+        {getIcon()}
+        <div>
+          <p className="font-semibold text-gray-900">{service.name}</p>
+          <p className="text-sm text-gray-600">{service.message}</p>
         </div>
-        
-        {/* Connection status badge */}
-        {service.connected ? (
-          <Badge variant="default" className="bg-green-100 text-green-700 border-green-300">
-            Connected
-          </Badge>
-        ) : (
-          <Badge variant="destructive">
-            Disconnected
-          </Badge>
-        )}
       </div>
 
-      <div className="space-y-2">
-        {/* Response time */}
-        {service.responseTime !== undefined && (
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Response time:</span>
-            <span className="font-medium text-gray-900">
-              {service.responseTime}ms
-            </span>
-          </div>
-        )}
-
-        {/* Last checked */}
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Last checked:</span>
-          <span className="font-medium text-gray-900">
-            {formatDistanceToNow(service.lastChecked, { addSuffix: true })}
-          </span>
-        </div>
-
-        {/* Last successful (if disconnected) */}
-        {!service.connected && service.lastSuccessful && (
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Last successful:</span>
-            <span className="font-medium text-gray-900">
-              {formatDistanceToNow(service.lastSuccessful, { addSuffix: true })}
-            </span>
-          </div>
-        )}
-
-        {/* Error message (if any) */}
-        {service.error && (
-          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-            {service.error}
-          </div>
-        )}
+      <div className="text-right">
+        <p
+          className="text-sm font-semibold"
+          style={{ color: colors.badge }}
+        >
+          {getStatusText()}
+        </p>
+        <p className="text-xs text-gray-500">{formatResponseTime()}</p>
+        <p className="text-xs text-gray-400">{formatLastChecked()}</p>
       </div>
     </div>
   );
